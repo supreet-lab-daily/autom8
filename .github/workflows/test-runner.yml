@@ -55,7 +55,8 @@ jobs:
   run-tests:
     name: Execute Apex Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Timeout set to accommodate: 30 min wait (RunAllTestsInOrg) + 5 min buffer + other steps
+    timeout-minutes: 45
     
     outputs:
       has_failures: ${{ steps.analyze.outputs.has_failures }}
@@ -133,9 +134,17 @@ jobs:
           TEST_CMD+=" --code-coverage"
           TEST_CMD+=" --result-format json"
           TEST_CMD+=" --output-dir ./test-results"
-          TEST_CMD+=" --wait 10"
           
+          # Wait for test completion: --wait specifies MAXIMUM minutes to wait
+          # The command returns IMMEDIATELY when tests complete (no need to wait full duration)
+          # For RunAllTestsInOrg, use longer max wait time (30 min), otherwise 20 min
           TEST_LEVEL="${{ inputs.test_level || 'RunSpecifiedTests' }}"
+          if [ "$TEST_LEVEL" = "RunAllTestsInOrg" ]; then
+            WAIT_MINUTES=30
+          else
+            WAIT_MINUTES=20
+          fi
+          TEST_CMD+=" --wait $WAIT_MINUTES"
           
           if [ "$TEST_LEVEL" = "RunSpecifiedTests" ]; then
             # Use specified tests
@@ -155,26 +164,125 @@ jobs:
           fi
           
           echo "Executing: $TEST_CMD"
-          echo "::notice::Test execution started. This may take several minutes..."
+          echo "::notice::Test execution started. Will proceed immediately when tests complete (max wait: ${WAIT_MINUTES} minutes)..."
           
           set +e
-          # Run with timeout to prevent indefinite execution
-          timeout 900 bash -c "eval \"$TEST_CMD\"" > ./test-results/test-run-output.json 2>&1
+          # Run with timeout: add buffer (5 min) beyond wait time to prevent premature termination
+          # Total timeout = wait time + buffer
+          TIMEOUT_SECONDS=$(( (WAIT_MINUTES + 5) * 60 ))
+          # Capture stdout (JSON) to file, stderr goes to console for GitHub Actions logs
+          timeout $TIMEOUT_SECONDS bash -c "eval \"$TEST_CMD\"" > ./test-results/test-run-output.json
           TEST_EXIT_CODE=$?
           set -e
           
+          # Verify test execution completed
           if [ $TEST_EXIT_CODE -eq 124 ]; then
-            echo "::error::Test execution timed out after 15 minutes"
-            echo "Consider running fewer test classes or increasing timeout"
+            echo "::error::Test execution timed out after ${TIMEOUT_SECONDS} seconds (${WAIT_MINUTES} min wait + 5 min buffer)"
+            echo "Consider running fewer test classes or increasing wait time"
             exit 124
           fi
           
-          echo "Test execution completed with exit code: $TEST_EXIT_CODE"
+          echo "Test command completed with exit code: $TEST_EXIT_CODE"
           
-          # Check if output file exists and has content
-          if [ ! -s ./test-results/test-run-output.json ]; then
-            echo "::warning::Test output file is empty. Test execution may have failed silently."
+          # The --wait flag ensures Salesforce CLI waits for completion and returns immediately when done
+          # No need to sleep - proceed immediately to verification
+          
+          # Verify that test results exist before proceeding
+          # Check both stdout capture and output directory files
+          HAS_STDOUT_RESULT=false
+          HAS_DIR_RESULT=false
+          
+          if [ -f ./test-results/test-run-output.json ] && [ -s ./test-results/test-run-output.json ]; then
+            HAS_STDOUT_RESULT=true
+            echo "✅ Found test results in stdout capture file"
           fi
+          
+          if find ./test-results -name "test-result-*.json" -type f 2>/dev/null | grep -q .; then
+            HAS_DIR_RESULT=true
+            RESULT_FILES_COUNT=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null | wc -l)
+            echo "✅ Found $RESULT_FILES_COUNT test result file(s) in output directory"
+          fi
+          
+          # If neither exists, that's an error
+          if [ "$HAS_STDOUT_RESULT" = false ] && [ "$HAS_DIR_RESULT" = false ]; then
+            echo "::error::No test result files found. Test execution may not have completed successfully."
+            echo "Exit code was: $TEST_EXIT_CODE"
+            exit 1
+          fi
+          
+          # Additional verification: check if result files in output directory exist (Salesforce CLI writes these)
+          RESULT_FILES_COUNT=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null | wc -l)
+          if [ "$RESULT_FILES_COUNT" -gt 0 ]; then
+            echo "✅ Found $RESULT_FILES_COUNT test result file(s) in output directory"
+          fi
+          
+          # Clean JSON output: Salesforce CLI may output info messages before JSON
+          # Extract only the valid JSON portion from the file
+          if [ -f ./test-results/test-run-output.json ]; then
+            node << 'NODEEOF'
+const fs = require('fs');
+try {
+    const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
+    
+    // Find the first '{' or '[' that starts valid JSON
+    for (let i = 0; i < content.length; i++) {
+        if (content[i] === '{' || content[i] === '[') {
+            try {
+                const jsonObj = JSON.parse(content.substring(i));
+                // Write clean JSON back
+                fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
+                console.log('✅ Extracted valid JSON from output');
+                process.exit(0);
+            } catch (e) {
+                // Continue searching
+                continue;
+            }
+        }
+    }
+    
+    // If no JSON found by searching, try parsing the whole file
+    try {
+        const jsonObj = JSON.parse(content);
+        fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
+        console.log('✅ Parsed entire file as JSON');
+    } catch (parseError) {
+        console.warn('⚠️ Could not find valid JSON in output file');
+        console.warn('First 200 chars:', content.substring(0, 200));
+    }
+} catch (e) {
+    console.warn(`⚠️ Could not clean JSON output: ${e.message}`);
+    // Don't fail - let the analyze step handle the error
+}
+NODEEOF
+          fi
+          
+          # Verify test results contain actual data before proceeding
+          if [ -f ./test-results/test-run-output.json ]; then
+            # Check if JSON file contains test results
+            node << 'VERIFYEOF'
+const fs = require('fs');
+try {
+  const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
+  const data = JSON.parse(content);
+  const result = data.result || data;
+  const summary = result.summary || {};
+  
+  // Verify we have test execution data
+  if (summary.testsRan !== undefined || summary.outcome !== undefined || result.tests) {
+    console.log('✅ Test results verified: Contains test execution data');
+    console.log(`   Tests run: ${summary.testsRan || 'N/A'}`);
+    console.log(`   Outcome: ${summary.outcome || 'N/A'}`);
+  } else {
+    console.warn('⚠️ Test results file exists but does not contain expected test data structure');
+    console.warn('   This may indicate the test run did not complete successfully');
+  }
+} catch (e) {
+  console.warn(`⚠️ Could not verify test results: ${e.message}`);
+}
+VERIFYEOF
+          fi
+          
+          echo "✅ Test execution step completed. Proceeding to analysis..."
           
           # Don't fail on test failures - we handle them in analysis
           # Exit code 100 means tests failed, which is expected
@@ -208,16 +316,50 @@ jobs:
           
           // ── Load test results ──
           let testData = {};
-          try {
-            const raw = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
-            testData = JSON.parse(raw);
-          } catch (e) {
-            console.error('Could not parse test results:', e.message);
+          let testResultsFile = './test-results/test-run-output.json';
+          
+          // First, try the stdout capture file
+          if (fs.existsSync(testResultsFile)) {
+            try {
+              const raw = fs.readFileSync(testResultsFile, 'utf8').trim();
+              if (raw) {
+                testData = JSON.parse(raw);
+                console.log('✅ Loaded test results from stdout capture');
+              }
+            } catch (e) {
+              console.warn(`⚠️ Could not parse ${testResultsFile}: ${e.message}`);
+            }
+          }
+          
+          // Fallback: Check for result files in output directory
+          if (!testData.result && !testData.summary) {
+            try {
+              const files = fs.readdirSync('./test-results').filter(f => 
+                f.startsWith('test-result-') && f.endsWith('.json')
+              );
+              if (files.length > 0) {
+                // Use the most recent file
+                files.sort().reverse();
+                const latestFile = `./test-results/${files[0]}`;
+                const raw = fs.readFileSync(latestFile, 'utf8').trim();
+                if (raw) {
+                  testData = JSON.parse(raw);
+                  console.log(`✅ Loaded test results from ${latestFile}`);
+                }
+              }
+            } catch (e) {
+              console.warn(`⚠️ Could not load result files from output directory: ${e.message}`);
+            }
           }
           
           const result = testData.result || testData;
           const summary = result.summary || {};
           const tests = result.tests || [];
+          
+          // Ensure summary has default values
+          if (!summary.testsRan && !summary.outcome) {
+            console.warn('⚠️ No test summary found in results. Test execution may have failed.');
+          }
           
           // ── Load coverage data ──
           let coverageRecords = [];
@@ -441,10 +583,16 @@ jobs:
           retention-days: 30
 
       - name: Post Summary to GitHub (Appears in Completion Email)
+        if: always()
         run: |
           # Post full report to GitHub Step Summary
           # This content appears in GitHub's automatic workflow completion email
-          cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
+          if [ -f ./test-results/report.md ]; then
+            cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ⚠️ Test Report Not Available" >> $GITHUB_STEP_SUMMARY
+            echo "Report file was not generated. Check workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
@@ -453,74 +601,76 @@ jobs:
           echo "- [View Full Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
           echo "- [Download Test Results Artifact](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
           echo "- Report includes: test-report.json, test-report.md, coverage data" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Note:** This summary will appear in GitHub's automatic workflow completion email sent to repository watchers." >> $GITHUB_STEP_SUMMARY
           
-          # Post commit status (also appears in GitHub notifications)
-          node << 'EOF'
-          const fs = require('fs');
-          const https = require('https');
-          
-          const reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
-          const hasFailures = reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0;
-          const state = hasFailures ? 'failure' : 'success';
-          const description = hasFailures 
-            ? `❌ ${reportJson.summary.failing} failures, ${reportJson.summary.lowCoverageCount} low coverage`
-            : `✅ All tests passed (${reportJson.summary.passing}/${reportJson.summary.testsRan})`;
-          
-          // Post commit status via GitHub API
-          const token = process.env.GITHUB_TOKEN;
-          const repo = process.env.GITHUB_REPOSITORY;
-          const sha = process.env.GITHUB_SHA;
-          const serverUrl = process.env.GITHUB_SERVER_URL;
-          const runId = process.env.GITHUB_RUN_ID;
-          
-          const [owner, repoName] = repo.split('/');
-          const statusUrl = `${serverUrl}/api/v3/repos/${owner}/${repoName}/statuses/${sha}`;
-          
-          const statusPayload = JSON.stringify({
-            state: state,
-            target_url: `${serverUrl}/${owner}/${repoName}/actions/runs/${runId}`,
-            description: description,
-            context: 'salesforce/tests'
-          });
-          
-          const url = new URL(statusUrl);
-          const options = {
-            hostname: url.hostname,
-            port: 443,
-            path: url.pathname,
-            method: 'POST',
-            headers: {
-              'Authorization': `token ${token}`,
-              'Content-Type': 'application/json',
-              'User-Agent': 'GitHub-Actions'
+      - name: Post Commit Status (Appears in GitHub Notifications)
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Check if report exists
+            if (!fs.existsSync('./test-results/report.json')) {
+              console.log('⚠️ Report file not found, skipping commit status');
+              return;
             }
-          };
-          
-          const req = https.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-              if (res.statusCode >= 200 && res.statusCode < 300) {
-                console.log(`✅ Posted commit status: ${state} - ${description}`);
+            
+            let reportJson;
+            try {
+              reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
+            } catch (e) {
+              console.log(`⚠️ Could not parse report.json: ${e.message}, skipping commit status`);
+              return;
+            }
+            
+            // Ensure we have valid summary data with defaults
+            const summary = reportJson.summary || {};
+            const failing = parseInt(summary.failing) || 0;
+            const passing = parseInt(summary.passing) || 0;
+            const testsRan = parseInt(summary.testsRan) || 0;
+            const lowCoverageCount = parseInt(summary.lowCoverageCount) || 0;
+            
+            const hasFailures = failing > 0 || lowCoverageCount > 0;
+            const state = hasFailures ? 'failure' : 'success';
+            
+            // Build description (GitHub limit is 140 chars)
+            let description;
+            if (hasFailures) {
+              if (failing > 0 && lowCoverageCount > 0) {
+                description = `❌ ${failing} failures, ${lowCoverageCount} low coverage`;
+              } else if (failing > 0) {
+                description = `❌ ${failing} test failure${failing > 1 ? 's' : ''}`;
               } else {
-                console.warn(`⚠️ Could not post commit status: ${res.statusCode}`);
+                description = `⚠️ ${lowCoverageCount} class${lowCoverageCount > 1 ? 'es' : ''} below threshold`;
               }
+            } else {
+              if (testsRan > 0) {
+                description = `✅ All tests passed (${passing}/${testsRan})`;
+              } else {
+                description = `✅ Tests completed`;
+              }
+            }
+            
+            // Truncate if needed (GitHub limit is 140 chars)
+            if (description.length > 140) {
+              description = description.substring(0, 137) + '...';
+            }
+            
+            // Post commit status (appears in GitHub notification emails)
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'salesforce/tests'
             });
-          });
-          
-          req.on('error', (error) => {
-            console.warn(`⚠️ Error posting commit status: ${error.message}`);
-          });
-          
-          req.write(statusPayload);
-          req.end();
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
+            
+            console.log(`✅ Posted commit status: ${state} - ${description}`);
+            console.log('📧 This status will appear in GitHub notification emails');
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job: Send Slack Notification
