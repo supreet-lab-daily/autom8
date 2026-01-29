@@ -210,76 +210,61 @@ jobs:
             exit 1
           fi
           
-          # Additional verification: check if result files in output directory exist (Salesforce CLI writes these)
-          RESULT_FILES_COUNT=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null | wc -l)
-          if [ "$RESULT_FILES_COUNT" -gt 0 ]; then
-            echo "✅ Found $RESULT_FILES_COUNT test result file(s) in output directory"
-          fi
-          
           # Clean JSON output: Salesforce CLI may output info messages before JSON
           # Extract only the valid JSON portion from the file
           if [ -f ./test-results/test-run-output.json ]; then
-            node << 'NODEEOF'
-const fs = require('fs');
-try {
-    const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
-    
-    // Find the first '{' or '[' that starts valid JSON
-    for (let i = 0; i < content.length; i++) {
-        if (content[i] === '{' || content[i] === '[') {
-            try {
-                const jsonObj = JSON.parse(content.substring(i));
-                // Write clean JSON back
-                fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
-                console.log('✅ Extracted valid JSON from output');
-                process.exit(0);
-            } catch (e) {
-                // Continue searching
-                continue;
-            }
-        }
-    }
-    
-    // If no JSON found by searching, try parsing the whole file
-    try {
-        const jsonObj = JSON.parse(content);
-        fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
-        console.log('✅ Parsed entire file as JSON');
-    } catch (parseError) {
-        console.warn('⚠️ Could not find valid JSON in output file');
-        console.warn('First 200 chars:', content.substring(0, 200));
-    }
-} catch (e) {
-    console.warn(`⚠️ Could not clean JSON output: ${e.message}`);
-    // Don't fail - let the analyze step handle the error
-}
-NODEEOF
+            node -e "
+              const fs = require('fs');
+              try {
+                const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
+                for (let i = 0; i < content.length; i++) {
+                  if (content[i] === '{' || content[i] === '[') {
+                    try {
+                      const jsonObj = JSON.parse(content.substring(i));
+                      fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
+                      console.log('✅ Extracted valid JSON from output');
+                      process.exit(0);
+                    } catch (e) {
+                      continue;
+                    }
+                  }
+                }
+                try {
+                  const jsonObj = JSON.parse(content);
+                  fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
+                  console.log('✅ Parsed entire file as JSON');
+                } catch (parseError) {
+                  console.warn('⚠️ Could not find valid JSON in output file');
+                  console.warn('First 200 chars:', content.substring(0, 200));
+                }
+              } catch (e) {
+                console.warn('⚠️ Could not clean JSON output: ' + e.message);
+              }
+            "
           fi
           
           # Verify test results contain actual data before proceeding
           if [ -f ./test-results/test-run-output.json ]; then
             # Check if JSON file contains test results
-            node << 'VERIFYEOF'
-const fs = require('fs');
-try {
-  const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
-  const data = JSON.parse(content);
-  const result = data.result || data;
-  const summary = result.summary || {};
-  
-  // Verify we have test execution data
-  if (summary.testsRan !== undefined || summary.outcome !== undefined || result.tests) {
-    console.log('✅ Test results verified: Contains test execution data');
-    console.log(`   Tests run: ${summary.testsRan || 'N/A'}`);
-    console.log(`   Outcome: ${summary.outcome || 'N/A'}`);
-  } else {
-    console.warn('⚠️ Test results file exists but does not contain expected test data structure');
-    console.warn('   This may indicate the test run did not complete successfully');
-  }
-} catch (e) {
-  console.warn(`⚠️ Could not verify test results: ${e.message}`);
-}
-VERIFYEOF
+            node -e "
+              const fs = require('fs');
+              try {
+                const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
+                const data = JSON.parse(content);
+                const result = data.result || data;
+                const summary = result.summary || {};
+                if (summary.testsRan !== undefined || summary.outcome !== undefined || result.tests) {
+                  console.log('✅ Test results verified: Contains test execution data');
+                  console.log('   Tests run: ' + (summary.testsRan || 'N/A'));
+                  console.log('   Outcome: ' + (summary.outcome || 'N/A'));
+                } else {
+                  console.warn('⚠️ Test results file exists but does not contain expected test data structure');
+                  console.warn('   This may indicate the test run did not complete successfully');
+                }
+              } catch (e) {
+                console.warn('⚠️ Could not verify test results: ' + e.message);
+              }
+            "
           fi
           
           echo "✅ Test execution step completed. Proceeding to analysis..."
