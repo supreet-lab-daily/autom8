@@ -599,13 +599,13 @@ jobs:
           INDEX_FILE="${REPORT_DIR}/README.md"
           
           if [ ! -f "${INDEX_FILE}" ]; then
-            # FIXED: Use unquoted heredoc for variable substitution
-            cat > "${INDEX_FILE}" << INDEXEOF
-# Test Reports - ${MONTH}/${YEAR}
-
-## Reports
-
-INDEXEOF
+            # Create index file header
+            {
+              echo "# Test Reports - ${MONTH}/${YEAR}"
+              echo ""
+              echo "## Reports"
+              echo ""
+            } > "${INDEX_FILE}"
           fi
           
           # Add entry to index (prepend to keep newest on top)
