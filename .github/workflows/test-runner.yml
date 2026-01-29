@@ -26,7 +26,7 @@ on:
           - RunLocalTests
           - RunAllTestsInOrg
       specified_tests:
-        description: 'Comma-separated test classes (only for RunSpecifiedTests). Example: AccountServiceTest,ContactServiceTest'
+        description: 'Comma-separated test classes (only for RunSpecifiedTests)'
         required: false
         default: ''
       coverage_threshold:
@@ -55,7 +55,6 @@ jobs:
   run-tests:
     name: Execute Apex Tests
     runs-on: ubuntu-latest
-    # Timeout set to accommodate: 30 min wait (RunAllTestsInOrg) + 5 min buffer + other steps
     timeout-minutes: 45
     
     outputs:
@@ -66,7 +65,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for git blame
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -75,9 +74,6 @@ jobs:
 
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
-
-      - name: Verify Salesforce CLI
-        run: sf version --verbose
 
       - name: Authenticate to Sandbox
         run: |
@@ -92,240 +88,81 @@ jobs:
         run: sf org display --target-org ${{ env.SF_ORG_ALIAS }}
 
       # ────────────────────────────────────────────────────────────────────
-      # List Available Test Classes (for reference)
-      # ────────────────────────────────────────────────────────────────────
-      - name: List Available Test Classes
-        if: inputs.test_level == 'RunSpecifiedTests'
-        continue-on-error: true
-        run: |
-          echo "📋 Available test classes in org (first 20):"
-          echo ""
-          # Query test classes and format output
-          sf data query \
-            --target-org ${{ env.SF_ORG_ALIAS }} \
-            --query "SELECT Name FROM ApexClass WHERE Name LIKE '%Test%' ORDER BY Name LIMIT 20" \
-            --result-format json > /tmp/test-classes.json 2>/dev/null || {
-            echo "⚠️ Could not query test classes. You can still specify test class names manually."
-            exit 0
-          }
-          
-          # Parse and display test classes
-          if command -v jq &> /dev/null; then
-            jq -r '.result.records[]?.Name // empty' /tmp/test-classes.json | while read -r class; do
-              echo "  • $class"
-            done
-          else
-            # Fallback: show raw JSON
-            cat /tmp/test-classes.json
-          fi
-          echo ""
-          echo "💡 Tip: Copy the class names above and paste them in the 'specified_tests' input (comma-separated)"
-
-      # ────────────────────────────────────────────────────────────────────
-      # Run Apex Tests
+      # Run Apex Tests (Simplified)
       # ────────────────────────────────────────────────────────────────────
       - name: Run Apex Tests
         id: run-tests
         run: |
+          set -o pipefail
           mkdir -p ./test-results
           
-          TEST_CMD="sf apex run test"
-          TEST_CMD+=" --target-org ${{ env.SF_ORG_ALIAS }}"
-          TEST_CMD+=" --code-coverage"
-          TEST_CMD+=" --result-format json"
-          TEST_CMD+=" --output-dir ./test-results"
-          
-          # Wait for test completion: --wait specifies MAXIMUM minutes to wait
-          # The command returns IMMEDIATELY when tests complete (no need to wait full duration)
-          # For RunAllTestsInOrg, use longer max wait time (30 min), otherwise 20 min
           TEST_LEVEL="${{ inputs.test_level || 'RunSpecifiedTests' }}"
-          if [ "$TEST_LEVEL" = "RunAllTestsInOrg" ]; then
-            WAIT_MINUTES=30
-          else
-            WAIT_MINUTES=20
-          fi
-          TEST_CMD+=" --wait $WAIT_MINUTES"
+          SPECIFIED_TESTS="${{ inputs.specified_tests }}"
           
-          if [ "$TEST_LEVEL" = "RunSpecifiedTests" ]; then
-            # Use specified tests
-            SPECIFIED_TESTS="${{ inputs.specified_tests }}"
-            if [ -z "$SPECIFIED_TESTS" ]; then
-              echo "::error::No test classes specified for RunSpecifiedTests"
-              echo "Please provide comma-separated test class names in the 'specified_tests' input"
-              echo "Example: AccountServiceTest,ContactServiceTest,OpportunityServiceTest"
-              exit 1
-            fi
-            TEST_CMD+=" --class-names $SPECIFIED_TESTS"
-            echo "Running specified test classes: $SPECIFIED_TESTS"
-          else
-            TEST_CMD+=" --test-level $TEST_LEVEL"
-            echo "Running test level: $TEST_LEVEL"
-            echo "::warning::Running all tests may take a long time. Consider using RunSpecifiedTests for faster execution."
-          fi
-          
-          echo "Executing: $TEST_CMD"
-          echo "::notice::Test execution started. Will proceed immediately when tests complete (max wait: ${WAIT_MINUTES} minutes)..."
-          
-          set +e
-          # Run with timeout: add buffer (5 min) beyond wait time to prevent premature termination
-          # Total timeout = wait time + buffer
-          TIMEOUT_SECONDS=$(( (WAIT_MINUTES + 5) * 60 ))
-          
-          # Execute command: The --wait flag makes Salesforce CLI synchronous
-          # It waits for test completion and should exit immediately when done
-          # Run with timeout and capture output
-          timeout $TIMEOUT_SECONDS bash -c "eval \"$TEST_CMD\"" > ./test-results/test-run-output.log 2>&1
-          TEST_EXIT_CODE=$?
-          
-          # Also output log to console for visibility
-          cat ./test-results/test-run-output.log
-          
-          echo "Command exited with code: $TEST_EXIT_CODE"
-          
-          # Check for result files FIRST, regardless of exit code
-          # Salesforce CLI writes result files even if interrupted
-          RESULT_FILES=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null)
-          HAS_RESULTS=false
-          
-          if [ -n "$RESULT_FILES" ]; then
-            RESULT_COUNT=$(echo "$RESULT_FILES" | wc -l)
-            echo "✅ Found $RESULT_COUNT result file(s) in output directory"
-            HAS_RESULTS=true
-          fi
-          
-          # Check if timeout was hit (exit code 124 from timeout, or 130/143 from SIGINT/SIGTERM)
-          # Exit codes: 124 = timeout, 130 = SIGINT (Ctrl+C), 143 = SIGTERM
-          if [ $TEST_EXIT_CODE -eq 124 ] || [ $TEST_EXIT_CODE -eq 130 ] || [ $TEST_EXIT_CODE -eq 143 ]; then
-            echo "⚠️ Command was interrupted (exit code: $TEST_EXIT_CODE)"
-            echo "This may indicate a timeout or signal was sent"
-            
-            if [ "$HAS_RESULTS" = true ]; then
-              echo "✅ However, result files exist - tests completed successfully before interruption"
-              echo "Continuing with result processing..."
-              TEST_EXIT_CODE=0  # Override to continue processing
-            else
-              echo "::error::Command timed out/interrupted after ${TIMEOUT_SECONDS} seconds and no result files found"
-              echo "Test execution likely did not complete"
-              exit 124
-            fi
-          elif [ $TEST_EXIT_CODE -ne 0 ] && [ "$HAS_RESULTS" = false ]; then
-            # Non-zero exit code and no results - this is an error
-            echo "::error::Command failed with exit code: $TEST_EXIT_CODE"
-            echo "No result files found - test execution failed"
-            exit $TEST_EXIT_CODE
-          fi
-          
-          set -e
-          
-          # Extract JSON from log if present (Salesforce CLI may output JSON to stdout)
-          # Primary source should be result files in output directory
-          if [ -f ./test-results/test-run-output.log ]; then
-            # Try to extract JSON object from log file (look for complete JSON objects)
-            grep -oP '\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}' ./test-results/test-run-output.log | tail -1 > ./test-results/test-run-output.json 2>/dev/null || true
-            # If that didn't work, try simpler extraction
-            if [ ! -s ./test-results/test-run-output.json ]; then
-              grep -o '{.*}' ./test-results/test-run-output.log | tail -1 > ./test-results/test-run-output.json 2>/dev/null || true
-            fi
-          fi
-          
-          # Result files were already checked above - just log final status
-          echo "Test execution step completed with exit code: $TEST_EXIT_CODE"
-          if [ "$HAS_RESULTS" = true ]; then
-            echo "✅ Proceeding to result analysis..."
-          fi
-          
-          # The --wait flag ensures Salesforce CLI waits for completion and returns immediately when done
-          # No need to sleep - proceed immediately to verification
-          
-          # Verify that test results exist before proceeding
-          # Check both stdout capture and output directory files
-          HAS_STDOUT_RESULT=false
-          HAS_DIR_RESULT=false
-          
-          if [ -f ./test-results/test-run-output.json ] && [ -s ./test-results/test-run-output.json ]; then
-            HAS_STDOUT_RESULT=true
-            echo "✅ Found test results in stdout capture file"
-          fi
-          
-          if find ./test-results -name "test-result-*.json" -type f 2>/dev/null | grep -q .; then
-            HAS_DIR_RESULT=true
-            RESULT_FILES_COUNT=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null | wc -l)
-            echo "✅ Found $RESULT_FILES_COUNT test result file(s) in output directory"
-          fi
-          
-          # If neither exists, that's an error
-          if [ "$HAS_STDOUT_RESULT" = false ] && [ "$HAS_DIR_RESULT" = false ]; then
-            echo "::error::No test result files found. Test execution may not have completed successfully."
-            echo "Exit code was: $TEST_EXIT_CODE"
+          # Validate RunSpecifiedTests has classes
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -z "$SPECIFIED_TESTS" ]]; then
+            echo "::error::No test classes specified. Provide comma-separated class names."
             exit 1
           fi
           
-          # Clean JSON output: Salesforce CLI may output info messages before JSON
-          # Extract only the valid JSON portion from the file
-          if [ -f ./test-results/test-run-output.json ]; then
-            node -e "
-              const fs = require('fs');
-              try {
-                const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
-                for (let i = 0; i < content.length; i++) {
-                  if (content[i] === '{' || content[i] === '[') {
-                    try {
-                      const jsonObj = JSON.parse(content.substring(i));
-                      fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
-                      console.log('✅ Extracted valid JSON from output');
-                      process.exit(0);
-                    } catch (e) {
-                      continue;
-                    }
-                  }
-                }
-                try {
-                  const jsonObj = JSON.parse(content);
-                  fs.writeFileSync('./test-results/test-run-output.json', JSON.stringify(jsonObj, null, 2));
-                  console.log('✅ Parsed entire file as JSON');
-                } catch (parseError) {
-                  console.warn('⚠️ Could not find valid JSON in output file');
-                  console.warn('First 200 chars:', content.substring(0, 200));
-                }
-              } catch (e) {
-                console.warn('⚠️ Could not clean JSON output: ' + e.message);
-              }
-            "
+          # Build command arguments
+          ARGS=(
+            --target-org "${{ env.SF_ORG_ALIAS }}"
+            --code-coverage
+            --result-format json
+            --output-dir ./test-results
+            --wait 30
+          )
+          
+          # Add test level or specific classes
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" ]]; then
+            ARGS+=(--class-names "$SPECIFIED_TESTS")
+            echo "🧪 Running specified tests: $SPECIFIED_TESTS"
+          else
+            ARGS+=(--test-level "$TEST_LEVEL")
+            echo "🧪 Running test level: $TEST_LEVEL"
           fi
           
-          # Verify test results contain actual data before proceeding
-          if [ -f ./test-results/test-run-output.json ]; then
-            # Check if JSON file contains test results
-            node -e "
-              const fs = require('fs');
-              try {
-                const content = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
-                const data = JSON.parse(content);
-                const result = data.result || data;
-                const summary = result.summary || {};
-                if (summary.testsRan !== undefined || summary.outcome !== undefined || result.tests) {
-                  console.log('✅ Test results verified: Contains test execution data');
-                  console.log('   Tests run: ' + (summary.testsRan || 'N/A'));
-                  console.log('   Outcome: ' + (summary.outcome || 'N/A'));
-                } else {
-                  console.warn('⚠️ Test results file exists but does not contain expected test data structure');
-                  console.warn('   This may indicate the test run did not complete successfully');
-                }
-              } catch (e) {
-                console.warn('⚠️ Could not verify test results: ' + e.message);
-              }
-            "
+          # Execute tests
+          # Exit code 100 = tests ran but some failed (expected)
+          # Exit code 0 = all tests passed
+          # Other codes = execution error
+          echo "::group::Test Execution Output"
+          sf apex run test "${ARGS[@]}" || TEST_EXIT=$?
+          echo "::endgroup::"
+          
+          TEST_EXIT=${TEST_EXIT:-0}
+          echo "CLI exit code: $TEST_EXIT"
+          
+          # Find the result file (SF CLI names it test-result-<id>.json)
+          RESULT_FILE=$(find ./test-results -name "test-result-*.json" -type f | head -1)
+          
+          if [[ -z "$RESULT_FILE" ]]; then
+            echo "::error::No test result file found. Execution may have failed."
+            exit 1
           fi
           
-          echo "✅ Test execution step completed. Proceeding to analysis..."
+          # Copy to consistent filename for downstream steps
+          cp "$RESULT_FILE" ./test-results/test-results.json
+          echo "✅ Test results saved to ./test-results/test-results.json"
           
-          # Don't fail on test failures - we handle them in analysis
-          # Exit code 100 means tests failed, which is expected
-          if [ $TEST_EXIT_CODE -ne 0 ] && [ $TEST_EXIT_CODE -ne 100 ]; then
-            echo "::error::Test execution failed with exit code: $TEST_EXIT_CODE"
-            echo "Last 50 lines of output:"
-            tail -50 ./test-results/test-run-output.json || true
-            exit $TEST_EXIT_CODE
+          # Quick summary from results
+          node -e "
+            const r = require('./test-results/test-results.json');
+            const s = r.summary || {};
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('📊 Quick Summary');
+            console.log('   Tests: ' + (s.testsRan || 0));
+            console.log('   Passed: ' + (s.passing || 0));
+            console.log('   Failed: ' + (s.failing || 0));
+            console.log('   Outcome: ' + (s.outcome || 'Unknown'));
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          "
+          
+          # Fail only on execution errors, not test failures
+          if [[ $TEST_EXIT -ne 0 && $TEST_EXIT -ne 100 ]]; then
+            echo "::error::Test execution failed with code $TEST_EXIT"
+            exit $TEST_EXIT
           fi
 
       # ────────────────────────────────────────────────────────────────────
@@ -337,7 +174,7 @@ jobs:
             --target-org ${{ env.SF_ORG_ALIAS }} \
             --query "SELECT ApexClassOrTrigger.Name, NumLinesCovered, NumLinesUncovered FROM ApexCodeCoverageAggregate ORDER BY ApexClassOrTrigger.Name" \
             --result-format json \
-            > ./test-results/coverage-aggregate.json 2>/dev/null || true
+            > ./test-results/coverage-aggregate.json 2>/dev/null || echo '{"result":{"records":[]}}' > ./test-results/coverage-aggregate.json
 
       # ────────────────────────────────────────────────────────────────────
       # Analyze Results and Generate Report
@@ -350,60 +187,17 @@ jobs:
           const { execSync } = require('child_process');
           
           // ── Load test results ──
-          let testData = {};
-          let testResultsFile = './test-results/test-run-output.json';
-          
-          // First, try the stdout capture file
-          if (fs.existsSync(testResultsFile)) {
-            try {
-              const raw = fs.readFileSync(testResultsFile, 'utf8').trim();
-              if (raw) {
-                testData = JSON.parse(raw);
-                console.log('✅ Loaded test results from stdout capture');
-              }
-            } catch (e) {
-              console.warn(`⚠️ Could not parse ${testResultsFile}: ${e.message}`);
-            }
-          }
-          
-          // Fallback: Check for result files in output directory
-          if (!testData.result && !testData.summary) {
-            try {
-              const files = fs.readdirSync('./test-results').filter(f => 
-                f.startsWith('test-result-') && f.endsWith('.json')
-              );
-              if (files.length > 0) {
-                // Use the most recent file
-                files.sort().reverse();
-                const latestFile = `./test-results/${files[0]}`;
-                const raw = fs.readFileSync(latestFile, 'utf8').trim();
-                if (raw) {
-                  testData = JSON.parse(raw);
-                  console.log(`✅ Loaded test results from ${latestFile}`);
-                }
-              }
-            } catch (e) {
-              console.warn(`⚠️ Could not load result files from output directory: ${e.message}`);
-            }
-          }
-          
-          const result = testData.result || testData;
-          const summary = result.summary || {};
-          const tests = result.tests || [];
-          
-          // Ensure summary has default values
-          if (!summary.testsRan && !summary.outcome) {
-            console.warn('⚠️ No test summary found in results. Test execution may have failed.');
-          }
+          const testData = JSON.parse(fs.readFileSync('./test-results/test-results.json', 'utf8'));
+          const summary = testData.summary || {};
+          const tests = testData.tests || [];
           
           // ── Load coverage data ──
           let coverageRecords = [];
           try {
-            const coverageRaw = fs.readFileSync('./test-results/coverage-aggregate.json', 'utf8');
-            const coverageData = JSON.parse(coverageRaw);
+            const coverageData = JSON.parse(fs.readFileSync('./test-results/coverage-aggregate.json', 'utf8'));
             coverageRecords = coverageData.result?.records || [];
           } catch (e) {
-            console.warn('Could not load coverage data');
+            console.warn('⚠️ Could not load coverage data');
           }
           
           // ── Parse coverage ──
@@ -412,13 +206,12 @@ jobs:
             const covered = parseInt(r.NumLinesCovered) || 0;
             const uncovered = parseInt(r.NumLinesUncovered) || 0;
             const total = covered + uncovered;
-            const pct = total > 0 ? (covered / total) * 100 : 0;
             return {
               className: r.ApexClassOrTrigger?.Name || 'Unknown',
               linesCovered: covered,
               linesUncovered: uncovered,
               totalLines: total,
-              coveragePercentage: Math.round(pct * 100) / 100
+              coveragePercentage: total > 0 ? Math.round((covered / total) * 10000) / 100 : 0
             };
           });
           
@@ -426,24 +219,21 @@ jobs:
             .filter(c => c.coveragePercentage < threshold && c.totalLines > 0)
             .sort((a, b) => a.coveragePercentage - b.coveragePercentage);
           
-          // ── Parse failures ──
-          const failingTests = tests.filter(t => 
-            (t.Outcome || t.outcome) === 'Fail'
-          );
-          
-          // Group by class
+          // ── Parse failures and group by class ──
           const failuresByClass = {};
-          failingTests.forEach(t => {
-            const className = t.ApexClass?.Name || t.ClassName || t.apexClass?.name || 'Unknown';
-            if (!failuresByClass[className]) {
-              failuresByClass[className] = { className, methods: [] };
-            }
-            failuresByClass[className].methods.push({
-              methodName: t.MethodName || t.methodName,
-              message: t.Message || t.message,
-              stackTrace: t.StackTrace || t.stackTrace
+          tests
+            .filter(t => (t.Outcome || t.outcome) === 'Fail')
+            .forEach(t => {
+              const className = t.ApexClass?.Name || t.ClassName || 'Unknown';
+              if (!failuresByClass[className]) {
+                failuresByClass[className] = { className, methods: [] };
+              }
+              failuresByClass[className].methods.push({
+                methodName: t.MethodName || t.methodName,
+                message: t.Message || t.message,
+                stackTrace: t.StackTrace || t.stackTrace
+              });
             });
-          });
           
           // ── Git blame lookup ──
           function getLastCommitter(className) {
@@ -454,13 +244,10 @@ jobs:
             for (const p of paths) {
               if (fs.existsSync(p)) {
                 try {
-                  const result = execSync(
-                    `git log -1 --format="%an|%ae|%aI|%s" -- "${p}"`,
-                    { encoding: 'utf8', timeout: 5000 }
-                  ).trim();
+                  const result = execSync(`git log -1 --format="%an|%ae|%aI" -- "${p}"`, { encoding: 'utf8', timeout: 5000 }).trim();
                   if (result) {
-                    const [name, email, date, msg] = result.split('|');
-                    return { name, email, date: date?.split('T')[0], message: msg };
+                    const [name, email, date] = result.split('|');
+                    return { name, email, date: date?.split('T')[0] };
                   }
                 } catch (e) {}
               }
@@ -469,13 +256,8 @@ jobs:
           }
           
           // Add committer info
-          Object.values(failuresByClass).forEach(f => {
-            f.lastCommitter = getLastCommitter(f.className);
-          });
-          
-          lowCoverage.forEach(c => {
-            c.lastCommitter = getLastCommitter(c.className);
-          });
+          Object.values(failuresByClass).forEach(f => f.lastCommitter = getLastCommitter(f.className));
+          lowCoverage.forEach(c => c.lastCommitter = getLastCommitter(c.className));
           
           // ── Build report ──
           const report = {
@@ -483,7 +265,7 @@ jobs:
               outcome: summary.outcome || 'Unknown',
               testsRan: parseInt(summary.testsRan) || 0,
               passing: parseInt(summary.passing) || 0,
-              failing: parseInt(summary.failing) || failingTests.length,
+              failing: parseInt(summary.failing) || 0,
               passRate: summary.passRate || '0%',
               testRunId: summary.testRunId || 'N/A',
               timestamp: new Date().toISOString(),
@@ -494,15 +276,13 @@ jobs:
             lowCoverageClasses: lowCoverage.slice(0, 15)
           };
           
-          // ── Write JSON report ──
           fs.writeFileSync('./test-results/report.json', JSON.stringify(report, null, 2));
           
           // ── Generate Markdown ──
+          const isHealthy = report.summary.failing === 0 && lowCoverage.length === 0;
           let md = `# 🧪 Apex Test Report\n\n`;
           md += `**Generated:** ${report.summary.timestamp}\n\n`;
-          
-          const statusEmoji = report.summary.failing === 0 && lowCoverage.length === 0 ? '✅' : '🔴';
-          md += `## ${statusEmoji} Summary\n\n`;
+          md += `## ${isHealthy ? '✅' : '🔴'} Summary\n\n`;
           md += `| Metric | Value |\n|--------|-------|\n`;
           md += `| Tests Run | ${report.summary.testsRan} |\n`;
           md += `| Passing | ${report.summary.passing} |\n`;
@@ -514,15 +294,9 @@ jobs:
             md += `## ❌ Failing Test Classes\n\n`;
             report.failingClasses.forEach(f => {
               md += `### \`${f.className}\`\n`;
-              if (f.lastCommitter) {
-                md += `**Last Committer:** ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}\n\n`;
-              }
+              if (f.lastCommitter) md += `**Last Committer:** ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}\n\n`;
               md += `**Failed Methods:**\n`;
-              f.methods.forEach(m => {
-                md += `- \`${m.methodName}\``;
-                if (m.message) md += `: ${m.message.substring(0, 100)}`;
-                md += `\n`;
-              });
+              f.methods.forEach(m => md += `- \`${m.methodName}\`${m.message ? ': ' + m.message.substring(0, 100) : ''}\n`);
               md += `\n`;
             });
           }
@@ -531,71 +305,40 @@ jobs:
             md += `## 📉 Classes Below ${threshold}% Coverage\n\n`;
             md += `| Class | Coverage | Last Committer |\n|-------|----------|----------------|\n`;
             lowCoverage.slice(0, 15).forEach(c => {
-              const committer = c.lastCommitter?.name || 'Unknown';
-              md += `| \`${c.className}\` | ${c.coveragePercentage.toFixed(1)}% | ${committer} |\n`;
+              md += `| \`${c.className}\` | ${c.coveragePercentage.toFixed(1)}% | ${c.lastCommitter?.name || 'Unknown'} |\n`;
             });
           }
           
           fs.writeFileSync('./test-results/report.md', md);
           
           // ── Generate Slack payload ──
-          const isHealthy = report.summary.failing === 0 && lowCoverage.length === 0;
           const blocks = [
-            {
-              type: 'header',
-              text: {
-                type: 'plain_text',
-                text: isHealthy ? '✅ Apex Tests Passed' : '🔴 Apex Test Issues Detected',
-                emoji: true
-              }
-            },
-            {
-              type: 'section',
-              fields: [
-                { type: 'mrkdwn', text: `*Tests Run:*\n${report.summary.testsRan}` },
-                { type: 'mrkdwn', text: `*Pass Rate:*\n${report.summary.passRate}` },
-                { type: 'mrkdwn', text: `*Failures:*\n${report.summary.failing}` },
-                { type: 'mrkdwn', text: `*Low Coverage:*\n${lowCoverage.length} classes` }
-              ]
-            },
+            { type: 'header', text: { type: 'plain_text', text: isHealthy ? '✅ Apex Tests Passed' : '🔴 Apex Test Issues Detected', emoji: true } },
+            { type: 'section', fields: [
+              { type: 'mrkdwn', text: `*Tests Run:*\n${report.summary.testsRan}` },
+              { type: 'mrkdwn', text: `*Pass Rate:*\n${report.summary.passRate}` },
+              { type: 'mrkdwn', text: `*Failures:*\n${report.summary.failing}` },
+              { type: 'mrkdwn', text: `*Low Coverage:*\n${lowCoverage.length} classes` }
+            ]},
             { type: 'divider' }
           ];
           
           if (report.failingClasses.length > 0) {
-            blocks.push({
-              type: 'section',
-              text: { type: 'mrkdwn', text: `*❌ Failing Classes (${report.failingClasses.length})*` }
-            });
+            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*❌ Failing Classes (${report.failingClasses.length})*` } });
             report.failingClasses.slice(0, 5).forEach(f => {
-              const committer = f.lastCommitter ? `(${f.lastCommitter.name})` : '';
+              const committer = f.lastCommitter ? ` (${f.lastCommitter.name})` : '';
               const methods = f.methods.map(m => m.methodName).slice(0, 3).join(', ');
-              blocks.push({
-                type: 'section',
-                text: { type: 'mrkdwn', text: `• \`${f.className}\` ${committer}\n  _Methods:_ ${methods}` }
-              });
+              blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `• \`${f.className}\`${committer}\n  _Methods:_ ${methods}` } });
             });
             blocks.push({ type: 'divider' });
           }
           
           if (lowCoverage.length > 0) {
-            blocks.push({
-              type: 'section',
-              text: { type: 'mrkdwn', text: `*📉 Low Coverage (${lowCoverage.length} below ${threshold}%)*` }
-            });
-            const coverageList = lowCoverage.slice(0, 5).map(c => 
-              `• \`${c.className}\` - ${c.coveragePercentage.toFixed(1)}%`
-            ).join('\n');
-            blocks.push({
-              type: 'section',
-              text: { type: 'mrkdwn', text: coverageList }
-            });
+            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*📉 Low Coverage (${lowCoverage.length} below ${threshold}%)*` } });
+            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lowCoverage.slice(0, 5).map(c => `• \`${c.className}\` - ${c.coveragePercentage.toFixed(1)}%`).join('\n') } });
           }
           
-          blocks.push({
-            type: 'context',
-            elements: [{ type: 'mrkdwn', text: `🕐 ${new Date().toISOString()}` }]
-          });
-          
+          blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 ${new Date().toISOString()}` }] });
           fs.writeFileSync('./test-results/slack-payload.json', JSON.stringify({ blocks }, null, 2));
           
           // ── Set outputs ──
@@ -605,9 +348,7 @@ jobs:
             fs.appendFileSync(outputFile, `has_low_coverage=${lowCoverage.length > 0}\n`);
           }
           
-          console.log('\n✅ Report generated');
-          console.log(`   Failures: ${report.summary.failing}`);
-          console.log(`   Low coverage: ${lowCoverage.length}`);
+          console.log(`\n✅ Report generated — Failures: ${report.summary.failing}, Low coverage: ${lowCoverage.length}`);
           EOF
 
       - name: Upload Test Results
@@ -617,95 +358,41 @@ jobs:
           path: ./test-results/
           retention-days: 30
 
-      - name: Post Summary to GitHub (Appears in Completion Email)
+      - name: Post Summary to GitHub
         if: always()
         run: |
-          # Post full report to GitHub Step Summary
-          # This content appears in GitHub's automatic workflow completion email
           if [ -f ./test-results/report.md ]; then
             cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ⚠️ Test Report Not Available" >> $GITHUB_STEP_SUMMARY
-            echo "Report file was not generated. Check workflow logs for details." >> $GITHUB_STEP_SUMMARY
           fi
-          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📎 **Additional Resources:**" >> $GITHUB_STEP_SUMMARY
-          echo "- [View Full Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "- [Download Test Results Artifact](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "- Report includes: test-report.json, test-report.md, coverage data" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "💡 **Note:** This summary will appear in GitHub's automatic workflow completion email sent to repository watchers." >> $GITHUB_STEP_SUMMARY
-          
-      - name: Post Commit Status (Appears in GitHub Notifications)
+          echo "📎 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post Commit Status
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            if (!fs.existsSync('./test-results/report.json')) return;
             
-            // Check if report exists
-            if (!fs.existsSync('./test-results/report.json')) {
-              console.log('⚠️ Report file not found, skipping commit status');
-              return;
-            }
+            const report = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
+            const { failing = 0, passing = 0, testsRan = 0, lowCoverageCount = 0 } = report.summary || {};
+            const hasIssues = failing > 0 || lowCoverageCount > 0;
             
-            let reportJson;
-            try {
-              reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
-            } catch (e) {
-              console.log(`⚠️ Could not parse report.json: ${e.message}, skipping commit status`);
-              return;
-            }
+            const description = hasIssues
+              ? `❌ ${failing} failures, ${lowCoverageCount} low coverage`
+              : `✅ All tests passed (${passing}/${testsRan})`;
             
-            // Ensure we have valid summary data with defaults
-            const summary = reportJson.summary || {};
-            const failing = parseInt(summary.failing) || 0;
-            const passing = parseInt(summary.passing) || 0;
-            const testsRan = parseInt(summary.testsRan) || 0;
-            const lowCoverageCount = parseInt(summary.lowCoverageCount) || 0;
-            
-            const hasFailures = failing > 0 || lowCoverageCount > 0;
-            const state = hasFailures ? 'failure' : 'success';
-            
-            // Build description (GitHub limit is 140 chars)
-            let description;
-            if (hasFailures) {
-              if (failing > 0 && lowCoverageCount > 0) {
-                description = `❌ ${failing} failures, ${lowCoverageCount} low coverage`;
-              } else if (failing > 0) {
-                description = `❌ ${failing} test failure${failing > 1 ? 's' : ''}`;
-              } else {
-                description = `⚠️ ${lowCoverageCount} class${lowCoverageCount > 1 ? 'es' : ''} below threshold`;
-              }
-            } else {
-              if (testsRan > 0) {
-                description = `✅ All tests passed (${passing}/${testsRan})`;
-              } else {
-                description = `✅ Tests completed`;
-              }
-            }
-            
-            // Truncate if needed (GitHub limit is 140 chars)
-            if (description.length > 140) {
-              description = description.substring(0, 137) + '...';
-            }
-            
-            // Post commit status (appears in GitHub notification emails)
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.sha,
-              state: state,
+              state: hasIssues ? 'failure' : 'success',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: description,
+              description: description.substring(0, 140),
               context: 'salesforce/tests'
             });
-            
-            console.log(`✅ Posted commit status: ${state} - ${description}`);
-            console.log('📧 This status will appear in GitHub notification emails');
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job: Send Slack Notification
@@ -731,7 +418,6 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-
   # ──────────────────────────────────────────────────────────────────────────
   # Job: Upload Report to Confluence
   # ──────────────────────────────────────────────────────────────────────────
@@ -739,7 +425,7 @@ jobs:
     name: Upload to Confluence
     runs-on: ubuntu-latest
     needs: run-tests
-    if: always() && (inputs.upload_confluence != false)
+    if: ${{ always() && (inputs.upload_confluence != false) }}
     
     steps:
       - name: Download Report
@@ -754,66 +440,21 @@ jobs:
           const fs = require('fs');
           const https = require('https');
           
-          // Confluence configuration
-          const CONFLUENCE_URL = process.env.CONFLUENCE_URL;
-          const CONFLUENCE_USERNAME = process.env.CONFLUENCE_USERNAME;
-          const CONFLUENCE_API_TOKEN = process.env.CONFLUENCE_API_TOKEN;
-          const CONFLUENCE_SPACE_KEY = process.env.CONFLUENCE_SPACE_KEY || 'TEST';
-          const CONFLUENCE_PARENT_PAGE_ID = process.env.CONFLUENCE_PARENT_PAGE_ID || '';
+          const { CONFLUENCE_URL, CONFLUENCE_USERNAME, CONFLUENCE_API_TOKEN, CONFLUENCE_SPACE_KEY, CONFLUENCE_PARENT_PAGE_ID } = process.env;
           
           if (!CONFLUENCE_URL || !CONFLUENCE_USERNAME || !CONFLUENCE_API_TOKEN) {
-            console.log('⚠️ Confluence credentials not configured. Skipping upload.');
+            console.log('⚠️ Confluence credentials not configured. Skipping.');
             process.exit(0);
           }
           
-          // Read report files
-          const reportMd = fs.readFileSync('./test-results/report.md', 'utf8');
           const reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
-          
-          // Generate page title
           const date = new Date().toISOString().split('T')[0];
-          const status = reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0 ? '❌' : '✅';
-          const pageTitle = `${status} Salesforce Test Report - ${date}`;
+          const status = (reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0) ? '❌' : '✅';
           
-          // Convert markdown to Confluence Storage Format
-          // Basic markdown to HTML conversion for Confluence
-          function markdownToConfluence(md) {
-            let html = md
-              // Headers
-              .replace(/^### (.*)$/gm, '<h3>$1</h3>')
-              .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-              .replace(/^# (.*)$/gm, '<h1>$1</h1>')
-              // Bold
-              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-              // Code blocks
-              .replace(/```[\s\S]*?```/g, (match) => {
-                const code = match.replace(/```/g, '').trim();
-                return `<pre><code>${code}</code></pre>`;
-              })
-              // Inline code
-              .replace(/`([^`]+)`/g, '<code>$1</code>')
-              // Lists
-              .replace(/^- (.*)$/gm, '<li>$1</li>')
-              .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-              // Tables
-              .replace(/\|(.+)\|/g, (match, content) => {
-                const cells = content.split('|').map(c => c.trim()).filter(c => c);
-                return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
-              })
-              // Line breaks
-              .replace(/\n\n/g, '</p><p>')
-              .replace(/\n/g, '<br/>');
-            
-            return `<p>${html}</p>`;
-          }
-          
-          // Build Confluence page content
-          const statusEmoji = reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0 ? '❌' : '✅';
           const storageFormat = `
-            <h1>${statusEmoji} Salesforce Test Report</h1>
+            <h1>${status} Salesforce Test Report - ${date}</h1>
             <p><strong>Generated:</strong> ${reportJson.summary.timestamp}</p>
-            <p><strong>Workflow Run:</strong> <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View on GitHub</a></p>
-            
+            <p><a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View on GitHub</a></p>
             <h2>Summary</h2>
             <table>
               <tr><th>Metric</th><th>Value</th></tr>
@@ -823,70 +464,42 @@ jobs:
               <tr><td>Pass Rate</td><td>${reportJson.summary.passRate}</td></tr>
               <tr><td>Low Coverage Classes</td><td>${reportJson.summary.lowCoverageCount}</td></tr>
             </table>
-            
-            ${markdownToConfluence(reportMd)}
-            
-            <hr/>
-            <p><em>Report generated by GitHub Actions workflow</em></p>
           `;
           
-          // Create page payload
-          const pagePayload = {
+          const payload = {
             type: 'page',
-            title: pageTitle,
-            space: { key: CONFLUENCE_SPACE_KEY },
-            body: {
-              storage: {
-                value: storageFormat,
-                representation: 'storage'
-              }
-            }
+            title: `${status} Salesforce Test Report - ${date}`,
+            space: { key: CONFLUENCE_SPACE_KEY || 'TEST' },
+            body: { storage: { value: storageFormat, representation: 'storage' } },
+            ...(CONFLUENCE_PARENT_PAGE_ID && { ancestors: [{ id: CONFLUENCE_PARENT_PAGE_ID }] })
           };
           
-          // Add parent page if specified
-          if (CONFLUENCE_PARENT_PAGE_ID) {
-            pagePayload.ancestors = [{ id: CONFLUENCE_PARENT_PAGE_ID }];
-          }
-          
-          // Create page via Confluence REST API
           const url = new URL(`${CONFLUENCE_URL}/rest/api/content`);
-          const auth = Buffer.from(`${CONFLUENCE_USERNAME}:${CONFLUENCE_API_TOKEN}`).toString('base64');
-          
-          const options = {
+          const req = https.request({
             hostname: url.hostname,
             port: url.port || 443,
             path: url.pathname,
             method: 'POST',
             headers: {
-              'Authorization': `Basic ${auth}`,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
+              'Authorization': `Basic ${Buffer.from(`${CONFLUENCE_USERNAME}:${CONFLUENCE_API_TOKEN}`).toString('base64')}`,
+              'Content-Type': 'application/json'
             }
-          };
-          
-          const req = https.request(options, (res) => {
+          }, res => {
             let data = '';
-            res.on('data', (chunk) => { data += chunk; });
+            res.on('data', chunk => data += chunk);
             res.on('end', () => {
               if (res.statusCode >= 200 && res.statusCode < 300) {
                 const response = JSON.parse(data);
-                console.log(`✅ Successfully uploaded report to Confluence`);
-                console.log(`   Page ID: ${response.id}`);
-                console.log(`   Page URL: ${CONFLUENCE_URL}${response._links.webui}`);
+                console.log(`✅ Uploaded to Confluence: ${CONFLUENCE_URL}${response._links.webui}`);
               } else {
-                console.error(`❌ Failed to upload to Confluence: ${res.statusCode}`);
-                console.error(`   Response: ${data}`);
+                console.error(`❌ Confluence upload failed: ${res.statusCode} - ${data}`);
                 process.exit(1);
               }
             });
           });
           
-          req.on('error', (error) => {
-            console.error(`❌ Error uploading to Confluence: ${error.message}`);
-            process.exit(1);
-          });
-          
-          req.write(JSON.stringify(pagePayload));
+          req.on('error', e => { console.error(`❌ Error: ${e.message}`); process.exit(1); });
+          req.write(JSON.stringify(payload));
           req.end();
           EOF
         env:
