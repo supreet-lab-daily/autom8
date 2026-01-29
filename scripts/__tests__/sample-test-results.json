@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "totalTests": 15,
+    "passed": 12,
+    "failures": 3,
+    "skipped": 0,
+    "testExecutionTime": 8500,
+    "totalLines": 2000,
+    "totalLinesCovered": 1900
+  },
+  "tests": [
+    {
+      "ClassName": "AccountServiceTest",
+      "MethodName": "testCreateAccount",
+      "Outcome": "Pass",
+      "RunTime": 150
+    },
+    {
+      "ClassName": "AccountServiceTest",
+      "MethodName": "testUpdateAccount",
+      "Outcome": "Pass",
+      "RunTime": 120
+    },
+    {
+      "ClassName": "ContactServiceTest",
+      "MethodName": "testCreateContact",
+      "Outcome": "Fail",
+      "Message": "Assertion failed: Expected 'John' but was 'Jane'",
+      "StackTrace": "ContactServiceTest.testCreateContact: line 25",
+      "RunTime": 200
+    },
+    {
+      "ClassName": "OpportunityServiceTest",
+      "MethodName": "testCreateOpportunity",
+      "Outcome": "Fail",
+      "Message": "DML exception: Required field missing",
+      "StackTrace": "OpportunityServiceTest.testCreateOpportunity: line 18",
+      "RunTime": 180
+    },
+    {
+      "ClassName": "LeadServiceTest",
+      "MethodName": "testConvertLead",
+      "Outcome": "Fail",
+      "Message": "System.NullPointerException",
+      "StackTrace": "LeadServiceTest.testConvertLead: line 42",
+      "RunTime": 250
+    }
+  ],
+  "codeCoverage": [
+    {
+      "name": "AccountService",
+      "numLocations": 150,
+      "numLocationsNotCovered": 5
+    },
+    {
+      "name": "ContactService",
+      "numLocations": 200,
+      "numLocationsNotCovered": 12
+    },
+    {
+      "name": "OpportunityService",
+      "numLocations": 180,
+      "numLocationsNotCovered": 15
+    },
+    {
+      "name": "LeadService",
+      "numLocations": 120,
+      "numLocationsNotCovered": 2
+    },
+    {
+      "name": "UtilityClass",
+      "numLocations": 50,
+      "numLocationsNotCovered": 3
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+name: Salesforce Test Suite
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC (adjust timezone as needed)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual triggering
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  salesforce-tests:
+    name: Run Salesforce Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history needed for committer info
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: |
+          npm install
+      
+      - name: Setup Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli
+          sf --version
+      
+      - name: Authenticate to Salesforce
+        env:
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
+          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL || 'https://test.salesforce.com' }}
+        run: |
+          echo "$SF_SECURITY_TOKEN$SF_PASSWORD" | sf org login web \
+            --instance-url $SF_LOGIN_URL \
+            --alias test-sandbox \
+            --set-default-username $SF_USERNAME
+      
+      - name: Run Salesforce Tests
+        id: test-run
+        run: |
+          node scripts/run-salesforce-tests.js
+      
+      - name: Generate Test Report
+        run: |
+          node scripts/generate-test-report.js
+      
+      - name: Upload Test Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: salesforce-test-report
+          path: |
+            reports/test-report.json
+            reports/test-report.md
+            reports/test-report.html
+      
+      - name: Comment PR with Test Results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('reports/test-report.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+      
+      - name: Create GitHub Issue on Test Failures
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = 'Test suite failed. ';
+            if (fs.existsSync('reports/test-report.md')) {
+              report += fs.readFileSync('reports/test-report.md', 'utf8');
+            }
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Automated] Salesforce Test Suite Failure - ${new Date().toISOString()}`,
+              body: report,
+              labels: ['automated', 'tests', 'salesforce']
+            });
