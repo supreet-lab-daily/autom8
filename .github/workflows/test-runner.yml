@@ -599,8 +599,9 @@ jobs:
           INDEX_FILE="${REPORT_DIR}/README.md"
           
           if [ ! -f "${INDEX_FILE}" ]; then
-            cat > "${INDEX_FILE}" << 'INDEXEOF'
-# Test Reports - $MONTH/$YEAR
+            # FIXED: Use unquoted heredoc for variable substitution
+            cat > "${INDEX_FILE}" << INDEXEOF
+# Test Reports - ${MONTH}/${YEAR}
 
 ## Reports
 
@@ -611,8 +612,12 @@ INDEXEOF
           STATUS_ICON="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
           REPORT_LINE="- ${STATUS_ICON} [${TIMESTAMP}](./${TIMESTAMP}/report.md) - Tests: ${{ needs.run-tests.outputs.summary_total }}, Passing: ${{ needs.run-tests.outputs.summary_passing }}, Failing: ${{ needs.run-tests.outputs.summary_failing }}, Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}"
           
-          # Insert after header (use a temporary file for portability)
-          awk -v line="${REPORT_LINE}" '/## Reports/ {print; print line; next} {print}' "${INDEX_FILE}" > "${INDEX_FILE}.tmp" && mv "${INDEX_FILE}.tmp" "${INDEX_FILE}"
+          # FIXED: Portable method using grep and temporary file
+          {
+            head -n 2 "${INDEX_FILE}"
+            echo "${REPORT_LINE}"
+            tail -n +3 "${INDEX_FILE}"
+          } > "${INDEX_FILE}.tmp" && mv "${INDEX_FILE}.tmp" "${INDEX_FILE}"
           
           echo "📁 Report organized in: ${REPORT_SUBDIR}"
           echo "REPORT_DIR=${REPORT_DIR}" >> $GITHUB_ENV
@@ -632,39 +637,20 @@ This directory contains automated test execution reports organized by year and m
 
 EOF
           
-          # Find the 10 most recent reports across all directories
-          # Use a temporary file to store timestamps and paths
-          TEMP_FILE=$(mktemp)
-          find "${{ env.REPORTS_DIR }}" -name "report.md" -type f | while read filepath; do
-            # Get modification time (portable method)
-            if command -v stat >/dev/null 2>&1; then
-              if stat -f "%m" "$filepath" 2>/dev/null >/dev/null; then
-                # macOS stat
-                MTIME=$(stat -f "%m" "$filepath" 2>/dev/null)
-              else
-                # Linux stat
-                MTIME=$(stat -c "%Y" "$filepath" 2>/dev/null)
-              fi
-              [ -n "$MTIME" ] && echo "$MTIME|$filepath" >> "$TEMP_FILE"
-            fi
-          done
-          
-          # Sort by modification time (newest first) and process top 10
-          sort -rn "$TEMP_FILE" 2>/dev/null | head -10 | while IFS='|' read -r timestamp filepath; do
+          # FIXED: Simplified approach using ls -t (sort by modification time)
+          # Find all report.md files and get the 10 most recent
+          find "${{ env.REPORTS_DIR }}" -name "report.md" -type f -print0 2>/dev/null | \
+            xargs -0 ls -t 2>/dev/null | head -10 | while read -r filepath; do
+            
             # Extract date from path (YYYY-MM-DD format)
             REPORT_DATE=$(echo "$filepath" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
             
-            # Calculate relative path (portable method without realpath)
-            REPORTS_BASE="${{ env.REPORTS_DIR }}"
-            REL_PATH="${filepath#$REPORTS_BASE/}"
-            # Remove leading slash if present
-            REL_PATH="${REL_PATH#/}"
-            
-            if [ -n "$REPORT_DATE" ] && [ -n "$REL_PATH" ]; then
-              echo "- [$REPORT_DATE](./${REL_PATH})" >> "${ROOT_INDEX}"
+            if [ -n "$REPORT_DATE" ]; then
+              # Calculate relative path from test-reports directory
+              REL_PATH="${filepath#${{ env.REPORTS_DIR }}/}"
+              echo "- [${REPORT_DATE}](./${REL_PATH})" >> "${ROOT_INDEX}"
             fi
           done
-          rm -f "$TEMP_FILE"
           
           cat >> "${ROOT_INDEX}" << 'EOF'
 
@@ -702,14 +688,16 @@ EOF
           
           STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴 FAILED' || '✅ PASSED' }}"
           
-          # Build multiline commit message using a here-document
-          git commit -m "test: Add test report for ${{ needs.run-tests.outputs.report_date }} - ${STATUS}" \
+          # FIXED: Use multiple -m flags for multiline commit message
+          git commit \
+            -m "test: Add test report for ${{ needs.run-tests.outputs.report_date }} - ${STATUS}" \
             -m "Tests: ${{ needs.run-tests.outputs.summary_total }}" \
             -m "Passing: ${{ needs.run-tests.outputs.summary_passing }}" \
             -m "Failing: ${{ needs.run-tests.outputs.summary_failing }}" \
             -m "Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}" \
             -m "" \
             -m "Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
           git push
           
           echo "✅ Test report committed and pushed to repository"
