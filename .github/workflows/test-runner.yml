@@ -526,7 +526,7 @@ jobs:
     name: Email Notification
     runs-on: ubuntu-latest
     needs: run-tests
-    if: ${{ always() && (inputs.send_email != false) }}
+    if: ${{ always() && (inputs.send_email != 'false') }}
     
     steps:
       - name: Download Report
@@ -558,7 +558,7 @@ jobs:
     name: Commit Test Report
     runs-on: ubuntu-latest
     needs: run-tests
-    if: ${{ always() && (inputs.commit_report != false) }}
+    if: ${{ always() && (inputs.commit_report != 'false') }}
     
     permissions:
       contents: write
