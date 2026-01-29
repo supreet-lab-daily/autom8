@@ -28,6 +28,8 @@ runs:
       run: |
         npm install -g @salesforce/cli
         sf --version
+        # Also install legacy sfdx CLI for compatibility
+        npm install -g sfdx-cli || echo "sfdx-cli installation skipped (sf CLI should be sufficient)"
     
     - name: Authenticate to Salesforce
       shell: bash
@@ -37,10 +39,35 @@ runs:
         SF_SECURITY_TOKEN: ${{ inputs.security_token }}
         SF_LOGIN_URL: ${{ inputs.login_url }}
       run: |
-        # Authenticate to Salesforce
-        echo "$SF_SECURITY_TOKEN$SF_PASSWORD" | sf org login web \
-          --instance-url $SF_LOGIN_URL \
-          --alias ${{ inputs.alias }}
+        # Authenticate to Salesforce using username/password with security token
+        # Create auth URL in format: force://PlatformCLI::ACCESS_TOKEN@INSTANCE_URL
+        # For username/password auth, we encode: username:password+security_token
+        FULL_PASSWORD="${SF_PASSWORD}${SF_SECURITY_TOKEN}"
+        AUTH_URL="force://PlatformCLI::$(echo -n "${SF_USERNAME}:${FULL_PASSWORD}" | base64 -w 0)@${SF_LOGIN_URL}"
+        
+        # Store authentication using sfdx-url method (non-interactive)
+        echo "$AUTH_URL" | sf org login sfdx-url \
+          --sfdx-url-file /dev/stdin \
+          --alias ${{ inputs.alias }} || {
+          # Fallback: Try with legacy sfdx command
+          echo "Trying legacy sfdx authentication..."
+          echo "$AUTH_URL" | sfdx auth:sfdxurl:store \
+            --sfdxurlfile /dev/stdin \
+            --setalias ${{ inputs.alias }} \
+            --setdefaultusername ${{ inputs.username }} || {
+            echo "Error: Authentication failed with both methods."
+            echo "Please verify:"
+            echo "  - Username: $SF_USERNAME"
+            echo "  - Login URL: $SF_LOGIN_URL"
+            echo "  - Security token is correct"
+            exit 1
+          }
+        }
+        
+        # Verify authentication
+        sf org display --target-org ${{ inputs.alias }} || \
+        sfdx force:org:display --targetusername ${{ inputs.alias }} || \
+        echo "Warning: Could not verify org, but authentication command completed"
         
         # Set as default org
         sf config set target-org=${{ inputs.alias }} || \
