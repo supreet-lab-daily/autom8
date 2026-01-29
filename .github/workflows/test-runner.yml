@@ -176,26 +176,46 @@ jobs:
           # Run with timeout and capture output
           timeout $TIMEOUT_SECONDS bash -c "eval \"$TEST_CMD\"" > ./test-results/test-run-output.log 2>&1
           TEST_EXIT_CODE=$?
-          set -e
           
           # Also output log to console for visibility
           cat ./test-results/test-run-output.log
           
           echo "Command exited with code: $TEST_EXIT_CODE"
           
-          # Check if timeout was hit (exit code 124 from timeout command)
-          if [ $TEST_EXIT_CODE -eq 124 ]; then
-            echo "::error::Command timed out after ${TIMEOUT_SECONDS} seconds"
-            echo "Checking if result files exist (tests may have completed despite timeout)..."
-            # Even if timed out, check if results exist - Salesforce CLI might have completed but timeout killed it
-            if find ./test-results -name "test-result-*.json" -type f 2>/dev/null | grep -q .; then
-              echo "⚠️ Timeout occurred but result files exist - tests completed, continuing..."
+          # Check for result files FIRST, regardless of exit code
+          # Salesforce CLI writes result files even if interrupted
+          RESULT_FILES=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null)
+          HAS_RESULTS=false
+          
+          if [ -n "$RESULT_FILES" ]; then
+            RESULT_COUNT=$(echo "$RESULT_FILES" | wc -l)
+            echo "✅ Found $RESULT_COUNT result file(s) in output directory"
+            HAS_RESULTS=true
+          fi
+          
+          # Check if timeout was hit (exit code 124 from timeout, or 130/143 from SIGINT/SIGTERM)
+          # Exit codes: 124 = timeout, 130 = SIGINT (Ctrl+C), 143 = SIGTERM
+          if [ $TEST_EXIT_CODE -eq 124 ] || [ $TEST_EXIT_CODE -eq 130 ] || [ $TEST_EXIT_CODE -eq 143 ]; then
+            echo "⚠️ Command was interrupted (exit code: $TEST_EXIT_CODE)"
+            echo "This may indicate a timeout or signal was sent"
+            
+            if [ "$HAS_RESULTS" = true ]; then
+              echo "✅ However, result files exist - tests completed successfully before interruption"
+              echo "Continuing with result processing..."
               TEST_EXIT_CODE=0  # Override to continue processing
             else
-              echo "No result files found - test execution likely did not complete"
+              echo "::error::Command timed out/interrupted after ${TIMEOUT_SECONDS} seconds and no result files found"
+              echo "Test execution likely did not complete"
               exit 124
             fi
+          elif [ $TEST_EXIT_CODE -ne 0 ] && [ "$HAS_RESULTS" = false ]; then
+            # Non-zero exit code and no results - this is an error
+            echo "::error::Command failed with exit code: $TEST_EXIT_CODE"
+            echo "No result files found - test execution failed"
+            exit $TEST_EXIT_CODE
           fi
+          
+          set -e
           
           # Extract JSON from log if present (Salesforce CLI may output JSON to stdout)
           # Primary source should be result files in output directory
@@ -208,26 +228,11 @@ jobs:
             fi
           fi
           
-          # Verify result files exist (Salesforce CLI writes these to output-dir)
-          echo "Checking for result files in output directory..."
-          RESULT_FILES=$(find ./test-results -name "test-result-*.json" -type f 2>/dev/null)
-          if [ -n "$RESULT_FILES" ]; then
-            RESULT_COUNT=$(echo "$RESULT_FILES" | wc -l)
-            echo "✅ Found $RESULT_COUNT result file(s) - tests completed successfully"
-            # If we had a timeout but results exist, override exit code
-            if [ $TEST_EXIT_CODE -eq 124 ]; then
-              echo "⚠️ Timeout occurred but result files exist - tests completed, continuing..."
-              TEST_EXIT_CODE=0
-            fi
-          else
-            echo "⚠️ No result files found in output directory"
-            # Check log for completion indicators
-            if grep -qiE "(test.*complete|test.*finished|test.*done|successfully)" ./test-results/test-run-output.log 2>/dev/null; then
-              echo "✅ Log indicates test completion"
-            fi
+          # Result files were already checked above - just log final status
+          echo "Test execution step completed with exit code: $TEST_EXIT_CODE"
+          if [ "$HAS_RESULTS" = true ]; then
+            echo "✅ Proceeding to result analysis..."
           fi
-          
-          echo "Test command completed with exit code: $TEST_EXIT_CODE"
           
           # The --wait flag ensures Salesforce CLI waits for completion and returns immediately when done
           # No need to sleep - proceed immediately to verification
