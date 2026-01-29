@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #dc3545; border-bottom: 3px solid #dc3545; padding-bottom: 10px; }
+    h2 { color: #0366d6; margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background-color: #f6f8fa; font-weight: 600; }
+    .success { color: #28a745; }
+    .failure { color: #dc3545; }
+    .warning { color: #ffc107; }
+    .metric-box { background: #f6f8fa; padding: 15px; border-radius: 6px; margin: 10px 0; }
+    .code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    .error-box { background: #fff5f5; border-left: 4px solid #dc3545; padding: 15px; margin: 10px 0; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>🔴 Salesforce Apex Test Report</h1>
+  
+  <div class="metric-box">
+    <p><strong>Generated:</strong> 2026-01-29T18:57:35.998Z</p>
+    <p><strong>Test Run ID:</strong> 707O2000029uCd2</p>
+    <p><strong>Workflow:</strong> <a href="https://github.com/supreet-lab-daily/autom8/actions/runs/21490888704">View on GitHub</a></p>
+  </div>
+  
+  <h2>Summary</h2>
+  <table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Tests Run</td><td><strong>27</strong></td></tr>
+    <tr><td>Passing</td><td class="success"><strong>26</strong></td></tr>
+    <tr><td>Failing</td><td class="failure"><strong>1</strong></td></tr>
+    <tr><td>Pass Rate</td><td><strong>96%</strong></td></tr>
+    <tr><td>Outcome</td><td class="failure"><strong>Failed</strong></td></tr>
+    <tr><td>Org Coverage</td><td><strong>90%</strong></td></tr>
+    <tr><td>Test Run Coverage</td><td><strong>92%</strong></td></tr>
+    <tr><td>Low Coverage Classes</td><td class="warning"><strong>9</strong></td></tr>
+  </table>
+  <h2 class="failure">❌ Failing Test Classes</h2>
+  <div class="error-box">
+    <h3><span class="code">ESMCustomMatrixEligibilityImplTest</span></h3>
+    <p><strong>Failed Methods:</strong></p><ul>
+      <li><span class="code">testcheckEligibility</span><br><em>System.NullPointerException: Attempt to de-reference a null object</em></li>
+    </ul></div>
+  <h2 class="warning">📉 Classes Below 95% Coverage</h2>
+  <p><strong>Warning:</strong> 9 classes are below the 95% coverage threshold.</p>
+  <table>
+    <tr><th>Class</th><th>Coverage</th><th>Lines</th><th>Last Modified By</th></tr>
+    <tr>
+      <td><span class="code">ESMCustomMatrixEligibilityImpl</span></td>
+      <td class="warning"><strong>59.9%</strong></td>
+      <td>115/192</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">LoggerCache</span></td>
+      <td class="warning"><strong>86.0%</strong></td>
+      <td>74/86</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">LoggerSObjectHandler</span></td>
+      <td class="warning"><strong>88.9%</strong></td>
+      <td>104/117</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">Logger</span></td>
+      <td class="warning"><strong>91.7%</strong></td>
+      <td>988/1077</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">LogEntryEventBuilder</span></td>
+      <td class="warning"><strong>92.3%</strong></td>
+      <td>587/636</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">LoggerEmailSender</span></td>
+      <td class="warning"><strong>92.6%</strong></td>
+      <td>88/95</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">LogEntryEventHandler</span></td>
+      <td class="warning"><strong>93.1%</strong></td>
+      <td>457/491</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">LoggerPlugin</span></td>
+      <td class="warning"><strong>93.8%</strong></td>
+      <td>61/65</td>
+      <td>Unknown</td>
+    </tr>
+    <tr>
+      <td><span class="code">StateCodes</span></td>
+      <td class="warning"><strong>94.0%</strong></td>
+      <td>940/1000</td>
+      <td>Unknown</td>
+    </tr>
+  </table>
+  <div class="footer">
+    <p>This report was generated automatically by the Salesforce DevOps Pipeline.</p>
+    <p>For full details, see the <a href="https://github.com/supreet-lab-daily/autom8/actions/runs/21490888704">GitHub Actions workflow run</a>.</p>
+  </div>
+</body>
+</html>
