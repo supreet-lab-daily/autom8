@@ -49,12 +49,16 @@ runs:
         # Base64 encode username:password+token (without newline)
         ENCODED_CREDS=$(echo -n "${SF_USERNAME}:${FULL_PASSWORD}" | base64 | tr -d '\n')
         
-        # Build auth URL - remove https:// from login URL if present for instance URL
+        # Build auth URL - use instance URL (domain only for sfdx-url format)
         INSTANCE_URL="${SF_LOGIN_URL}"
         INSTANCE_URL="${INSTANCE_URL#https://}"
         INSTANCE_URL="${INSTANCE_URL#http://}"
         
+        # Try with domain-only first (standard format)
         AUTH_URL="force://PlatformCLI::${ENCODED_CREDS}@${INSTANCE_URL}"
+        
+        # Alternative: Try with full URL if domain-only doesn't work
+        # AUTH_URL="force://PlatformCLI::${ENCODED_CREDS}@${SF_LOGIN_URL}"
         
         echo "Attempting authentication to: ${INSTANCE_URL}"
         
@@ -67,12 +71,11 @@ runs:
           --sfdx-url-file "$AUTH_FILE" \
           --alias ${{ inputs.alias }} 2>&1 || {
           
-          # Fallback: Try legacy sfdx command
+          # Fallback: Try legacy sfdx command (without --setdefaultusername flag)
           echo "Modern sf CLI failed, trying legacy sfdx..."
           sfdx auth:sfdxurl:store \
             --sfdxurlfile "$AUTH_FILE" \
-            --setalias ${{ inputs.alias }} \
-            --setdefaultusername ${{ inputs.username }} 2>&1 || {
+            --setalias ${{ inputs.alias }} 2>&1 || {
             
             # Clean up temp file
             rm -f "$AUTH_FILE"

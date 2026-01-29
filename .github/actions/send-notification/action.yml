@@ -23,11 +23,18 @@ runs:
   using: 'composite'
   steps:
     - name: Send Slack Notification
-      if: inputs.slack_webhook_url != ''
+      if: inputs.slack_webhook_url != '' && inputs.report_path != ''
       shell: bash
       env:
         SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook_url }}
       run: |
+        # Check if report file exists
+        if [ ! -f "${{ inputs.report_path }}" ]; then
+          echo "Report file not found: ${{ inputs.report_path }}"
+          echo "Skipping Slack notification - authentication or test execution may have failed"
+          exit 0
+        fi
+        
         REPORT=$(cat "${{ inputs.report_path }}")
         
         SUMMARY=$(echo "$REPORT" | jq -r '.summary')
@@ -80,11 +87,18 @@ runs:
           "$SLACK_WEBHOOK_URL" || true
     
     - name: Send MS Teams Notification
-      if: inputs.teams_webhook_url != ''
+      if: inputs.teams_webhook_url != '' && inputs.report_path != ''
       shell: bash
       env:
         TEAMS_WEBHOOK_URL: ${{ inputs.teams_webhook_url }}
       run: |
+        # Check if report file exists
+        if [ ! -f "${{ inputs.report_path }}" ]; then
+          echo "Report file not found: ${{ inputs.report_path }}"
+          echo "Skipping MS Teams notification - authentication or test execution may have failed"
+          exit 0
+        fi
+        
         REPORT=$(cat "${{ inputs.report_path }}")
         
         SUMMARY=$(echo "$REPORT" | jq -r '.summary')
@@ -143,11 +157,18 @@ runs:
           "$TEAMS_WEBHOOK_URL" || true
     
     - name: Send Email Notification
-      if: inputs.email_to != ''
+      if: inputs.email_to != '' && inputs.report_path != ''
       shell: bash
       env:
         EMAIL_TO: ${{ inputs.email_to }}
       run: |
+        # Check if report file exists
+        if [ ! -f "${{ inputs.report_path }}" ]; then
+          echo "Report file not found: ${{ inputs.report_path }}"
+          echo "Skipping email notification - authentication or test execution may have failed"
+          exit 0
+        fi
+        
         REPORT=$(cat "${{ inputs.report_path }}")
         
         SUMMARY=$(echo "$REPORT" | jq -r '.summary')

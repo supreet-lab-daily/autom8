@@ -94,7 +94,7 @@ jobs:
           retention-days: 30
       
       - name: Send Notifications
-        if: always()
+        if: always() && steps.report-generation.outputs.report_path != ''
         uses: ./.github/actions/send-notification
         with:
           report_path: ${{ steps.report-generation.outputs.report_path }}
