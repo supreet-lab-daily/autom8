@@ -1,0 +1,456 @@
+# ============================================================================
+# Scheduled Salesforce Test Runner
+# ============================================================================
+# Runs Apex tests on a schedule and generates comprehensive reports including:
+# - Test pass/fail summary
+# - Coverage analysis (flags classes below threshold)
+# - Last committer attribution for failing/low-coverage classes
+# ============================================================================
+
+name: Scheduled Salesforce Test Runner
+
+on:
+  schedule:
+    # Runs at 6 AM UTC Monday-Friday
+    - cron: '0 6 * * 1-5'
+  
+  workflow_dispatch:
+    inputs:
+      test_level:
+        description: 'Test Level'
+        required: true
+        default: 'RunLocalTests'
+        type: choice
+        options:
+          - RunLocalTests
+          - RunAllTestsInOrg
+          - RunSpecifiedTests
+      specified_tests:
+        description: 'Comma-separated test classes (only for RunSpecifiedTests)'
+        required: false
+        default: ''
+      coverage_threshold:
+        description: 'Coverage threshold percentage'
+        required: false
+        default: '95'
+      notify_slack:
+        description: 'Send Slack notification'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  SF_ORG_ALIAS: 'TestSandbox'
+  COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold || '95' }}
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job: Execute Tests and Generate Report
+  # ──────────────────────────────────────────────────────────────────────────
+  run-tests:
+    name: Execute Apex Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    outputs:
+      has_failures: ${{ steps.analyze.outputs.has_failures }}
+      has_low_coverage: ${{ steps.analyze.outputs.has_low_coverage }}
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git blame
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+
+      - name: Verify Salesforce CLI
+        run: sf version --verbose
+
+      - name: Authenticate to Sandbox
+        run: |
+          echo "${{ secrets.SANDBOX_AUTH_URL }}" > auth_url.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth_url.txt \
+            --alias ${{ env.SF_ORG_ALIAS }} \
+            --set-default
+          rm auth_url.txt
+
+      - name: Verify Org Connection
+        run: sf org display --target-org ${{ env.SF_ORG_ALIAS }}
+
+      # ────────────────────────────────────────────────────────────────────
+      # Run Apex Tests
+      # ────────────────────────────────────────────────────────────────────
+      - name: Run Apex Tests
+        id: run-tests
+        run: |
+          mkdir -p ./test-results
+          
+          TEST_CMD="sf apex run test"
+          TEST_CMD+=" --target-org ${{ env.SF_ORG_ALIAS }}"
+          TEST_CMD+=" --code-coverage"
+          TEST_CMD+=" --result-format json"
+          TEST_CMD+=" --output-dir ./test-results"
+          TEST_CMD+=" --wait 60"
+          
+          TEST_LEVEL="${{ inputs.test_level || 'RunLocalTests' }}"
+          
+          if [ "$TEST_LEVEL" = "RunSpecifiedTests" ] && [ -n "${{ inputs.specified_tests }}" ]; then
+            TEST_CMD+=" --class-names ${{ inputs.specified_tests }}"
+          else
+            TEST_CMD+=" --test-level $TEST_LEVEL"
+          fi
+          
+          echo "Executing: $TEST_CMD"
+          
+          set +e
+          eval "$TEST_CMD" > ./test-results/test-run-output.json 2>&1
+          TEST_EXIT_CODE=$?
+          set -e
+          
+          echo "Test execution completed with exit code: $TEST_EXIT_CODE"
+          
+          # Don't fail on test failures - we handle them in analysis
+          if [ $TEST_EXIT_CODE -ne 0 ] && [ $TEST_EXIT_CODE -ne 100 ]; then
+            echo "::error::Test execution failed"
+            exit $TEST_EXIT_CODE
+          fi
+
+      # ────────────────────────────────────────────────────────────────────
+      # Fetch Coverage Data
+      # ────────────────────────────────────────────────────────────────────
+      - name: Fetch Coverage Data
+        run: |
+          sf data query \
+            --target-org ${{ env.SF_ORG_ALIAS }} \
+            --query "SELECT ApexClassOrTrigger.Name, NumLinesCovered, NumLinesUncovered FROM ApexCodeCoverageAggregate ORDER BY ApexClassOrTrigger.Name" \
+            --result-format json \
+            > ./test-results/coverage-aggregate.json 2>/dev/null || true
+
+      # ────────────────────────────────────────────────────────────────────
+      # Analyze Results and Generate Report
+      # ────────────────────────────────────────────────────────────────────
+      - name: Analyze Results
+        id: analyze
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+          
+          // ── Load test results ──
+          let testData = {};
+          try {
+            const raw = fs.readFileSync('./test-results/test-run-output.json', 'utf8');
+            testData = JSON.parse(raw);
+          } catch (e) {
+            console.error('Could not parse test results:', e.message);
+          }
+          
+          const result = testData.result || testData;
+          const summary = result.summary || {};
+          const tests = result.tests || [];
+          
+          // ── Load coverage data ──
+          let coverageRecords = [];
+          try {
+            const coverageRaw = fs.readFileSync('./test-results/coverage-aggregate.json', 'utf8');
+            const coverageData = JSON.parse(coverageRaw);
+            coverageRecords = coverageData.result?.records || [];
+          } catch (e) {
+            console.warn('Could not load coverage data');
+          }
+          
+          // ── Parse coverage ──
+          const threshold = parseFloat(process.env.COVERAGE_THRESHOLD || '95');
+          const coverage = coverageRecords.map(r => {
+            const covered = parseInt(r.NumLinesCovered) || 0;
+            const uncovered = parseInt(r.NumLinesUncovered) || 0;
+            const total = covered + uncovered;
+            const pct = total > 0 ? (covered / total) * 100 : 0;
+            return {
+              className: r.ApexClassOrTrigger?.Name || 'Unknown',
+              linesCovered: covered,
+              linesUncovered: uncovered,
+              totalLines: total,
+              coveragePercentage: Math.round(pct * 100) / 100
+            };
+          });
+          
+          const lowCoverage = coverage
+            .filter(c => c.coveragePercentage < threshold && c.totalLines > 0)
+            .sort((a, b) => a.coveragePercentage - b.coveragePercentage);
+          
+          // ── Parse failures ──
+          const failingTests = tests.filter(t => 
+            (t.Outcome || t.outcome) === 'Fail'
+          );
+          
+          // Group by class
+          const failuresByClass = {};
+          failingTests.forEach(t => {
+            const className = t.ApexClass?.Name || t.ClassName || t.apexClass?.name || 'Unknown';
+            if (!failuresByClass[className]) {
+              failuresByClass[className] = { className, methods: [] };
+            }
+            failuresByClass[className].methods.push({
+              methodName: t.MethodName || t.methodName,
+              message: t.Message || t.message,
+              stackTrace: t.StackTrace || t.stackTrace
+            });
+          });
+          
+          // ── Git blame lookup ──
+          function getLastCommitter(className) {
+            const paths = [
+              `force-app/main/default/classes/${className}.cls`,
+              `src/classes/${className}.cls`
+            ];
+            for (const p of paths) {
+              if (fs.existsSync(p)) {
+                try {
+                  const result = execSync(
+                    `git log -1 --format="%an|%ae|%aI|%s" -- "${p}"`,
+                    { encoding: 'utf8', timeout: 5000 }
+                  ).trim();
+                  if (result) {
+                    const [name, email, date, msg] = result.split('|');
+                    return { name, email, date: date?.split('T')[0], message: msg };
+                  }
+                } catch (e) {}
+              }
+            }
+            return null;
+          }
+          
+          // Add committer info
+          Object.values(failuresByClass).forEach(f => {
+            f.lastCommitter = getLastCommitter(f.className);
+          });
+          
+          lowCoverage.forEach(c => {
+            c.lastCommitter = getLastCommitter(c.className);
+          });
+          
+          // ── Build report ──
+          const report = {
+            summary: {
+              outcome: summary.outcome || 'Unknown',
+              testsRan: parseInt(summary.testsRan) || 0,
+              passing: parseInt(summary.passing) || 0,
+              failing: parseInt(summary.failing) || failingTests.length,
+              passRate: summary.passRate || '0%',
+              testRunId: summary.testRunId || 'N/A',
+              timestamp: new Date().toISOString(),
+              coverageThreshold: threshold,
+              lowCoverageCount: lowCoverage.length
+            },
+            failingClasses: Object.values(failuresByClass),
+            lowCoverageClasses: lowCoverage.slice(0, 15)
+          };
+          
+          // ── Write JSON report ──
+          fs.writeFileSync('./test-results/report.json', JSON.stringify(report, null, 2));
+          
+          // ── Generate Markdown ──
+          let md = `# 🧪 Apex Test Report\n\n`;
+          md += `**Generated:** ${report.summary.timestamp}\n\n`;
+          
+          const statusEmoji = report.summary.failing === 0 && lowCoverage.length === 0 ? '✅' : '🔴';
+          md += `## ${statusEmoji} Summary\n\n`;
+          md += `| Metric | Value |\n|--------|-------|\n`;
+          md += `| Tests Run | ${report.summary.testsRan} |\n`;
+          md += `| Passing | ${report.summary.passing} |\n`;
+          md += `| Failing | ${report.summary.failing} |\n`;
+          md += `| Pass Rate | ${report.summary.passRate} |\n`;
+          md += `| Classes Below ${threshold}% | ${lowCoverage.length} |\n\n`;
+          
+          if (report.failingClasses.length > 0) {
+            md += `## ❌ Failing Test Classes\n\n`;
+            report.failingClasses.forEach(f => {
+              md += `### \`${f.className}\`\n`;
+              if (f.lastCommitter) {
+                md += `**Last Committer:** ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}\n\n`;
+              }
+              md += `**Failed Methods:**\n`;
+              f.methods.forEach(m => {
+                md += `- \`${m.methodName}\``;
+                if (m.message) md += `: ${m.message.substring(0, 100)}`;
+                md += `\n`;
+              });
+              md += `\n`;
+            });
+          }
+          
+          if (lowCoverage.length > 0) {
+            md += `## 📉 Classes Below ${threshold}% Coverage\n\n`;
+            md += `| Class | Coverage | Last Committer |\n|-------|----------|----------------|\n`;
+            lowCoverage.slice(0, 15).forEach(c => {
+              const committer = c.lastCommitter?.name || 'Unknown';
+              md += `| \`${c.className}\` | ${c.coveragePercentage.toFixed(1)}% | ${committer} |\n`;
+            });
+          }
+          
+          fs.writeFileSync('./test-results/report.md', md);
+          
+          // ── Generate Slack payload ──
+          const isHealthy = report.summary.failing === 0 && lowCoverage.length === 0;
+          const blocks = [
+            {
+              type: 'header',
+              text: {
+                type: 'plain_text',
+                text: isHealthy ? '✅ Apex Tests Passed' : '🔴 Apex Test Issues Detected',
+                emoji: true
+              }
+            },
+            {
+              type: 'section',
+              fields: [
+                { type: 'mrkdwn', text: `*Tests Run:*\n${report.summary.testsRan}` },
+                { type: 'mrkdwn', text: `*Pass Rate:*\n${report.summary.passRate}` },
+                { type: 'mrkdwn', text: `*Failures:*\n${report.summary.failing}` },
+                { type: 'mrkdwn', text: `*Low Coverage:*\n${lowCoverage.length} classes` }
+              ]
+            },
+            { type: 'divider' }
+          ];
+          
+          if (report.failingClasses.length > 0) {
+            blocks.push({
+              type: 'section',
+              text: { type: 'mrkdwn', text: `*❌ Failing Classes (${report.failingClasses.length})*` }
+            });
+            report.failingClasses.slice(0, 5).forEach(f => {
+              const committer = f.lastCommitter ? `(${f.lastCommitter.name})` : '';
+              const methods = f.methods.map(m => m.methodName).slice(0, 3).join(', ');
+              blocks.push({
+                type: 'section',
+                text: { type: 'mrkdwn', text: `• \`${f.className}\` ${committer}\n  _Methods:_ ${methods}` }
+              });
+            });
+            blocks.push({ type: 'divider' });
+          }
+          
+          if (lowCoverage.length > 0) {
+            blocks.push({
+              type: 'section',
+              text: { type: 'mrkdwn', text: `*📉 Low Coverage (${lowCoverage.length} below ${threshold}%)*` }
+            });
+            const coverageList = lowCoverage.slice(0, 5).map(c => 
+              `• \`${c.className}\` - ${c.coveragePercentage.toFixed(1)}%`
+            ).join('\n');
+            blocks.push({
+              type: 'section',
+              text: { type: 'mrkdwn', text: coverageList }
+            });
+          }
+          
+          blocks.push({
+            type: 'context',
+            elements: [{ type: 'mrkdwn', text: `🕐 ${new Date().toISOString()}` }]
+          });
+          
+          fs.writeFileSync('./test-results/slack-payload.json', JSON.stringify({ blocks }, null, 2));
+          
+          // ── Set outputs ──
+          const outputFile = process.env.GITHUB_OUTPUT;
+          if (outputFile) {
+            fs.appendFileSync(outputFile, `has_failures=${report.summary.failing > 0}\n`);
+            fs.appendFileSync(outputFile, `has_low_coverage=${lowCoverage.length > 0}\n`);
+          }
+          
+          console.log('\n✅ Report generated');
+          console.log(`   Failures: ${report.summary.failing}`);
+          console.log(`   Low coverage: ${lowCoverage.length}`);
+          EOF
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./test-results/
+          retention-days: 30
+
+      - name: Post Summary to GitHub
+        run: cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job: Send Slack Notification
+  # ──────────────────────────────────────────────────────────────────────────
+  notify-slack:
+    name: Slack Notification
+    runs-on: ubuntu-latest
+    needs: run-tests
+    if: ${{ always() && (inputs.notify_slack != false) }}
+    
+    steps:
+      - name: Download Report
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: ./test-results/
+
+      - name: Send Slack Notification
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload-file-path: './test-results/slack-payload.json'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job: Create GitHub Issue on Failures
+  # ──────────────────────────────────────────────────────────────────────────
+  create-issue:
+    name: Create GitHub Issue
+    runs-on: ubuntu-latest
+    needs: run-tests
+    if: ${{ needs.run-tests.outputs.has_failures == 'true' || needs.run-tests.outputs.has_low_coverage == 'true' }}
+    
+    steps:
+      - name: Download Report
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: ./test-results/
+
+      - name: Create or Update Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('./test-results/report.md', 'utf8');
+            const title = `🔴 Apex Test Issues - ${new Date().toISOString().split('T')[0]}`;
+            
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'apex-test-failure'
+            });
+            
+            if (issues.data.length > 0) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues.data[0].number,
+                body: body
+              });
+              console.log(`Updated issue #${issues.data[0].number}`);
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['apex-test-failure', 'automated']
+              });
+              console.log('Created new issue');
+            }
