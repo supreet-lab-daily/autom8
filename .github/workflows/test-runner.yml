@@ -38,6 +38,11 @@ on:
         required: false
         default: true
         type: boolean
+      upload_confluence:
+        description: 'Upload report to Confluence'
+        required: false
+        default: true
+        type: boolean
 
 env:
   SF_ORG_ALIAS: 'TestSandbox'
@@ -435,8 +440,87 @@ jobs:
           path: ./test-results/
           retention-days: 30
 
-      - name: Post Summary to GitHub
-        run: cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
+      - name: Post Summary to GitHub (Appears in Completion Email)
+        run: |
+          # Post full report to GitHub Step Summary
+          # This content appears in GitHub's automatic workflow completion email
+          cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📎 **Additional Resources:**" >> $GITHUB_STEP_SUMMARY
+          echo "- [View Full Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Download Test Results Artifact](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Report includes: test-report.json, test-report.md, coverage data" >> $GITHUB_STEP_SUMMARY
+          
+          # Post commit status (also appears in GitHub notifications)
+          node << 'EOF'
+          const fs = require('fs');
+          const https = require('https');
+          
+          const reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
+          const hasFailures = reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0;
+          const state = hasFailures ? 'failure' : 'success';
+          const description = hasFailures 
+            ? `❌ ${reportJson.summary.failing} failures, ${reportJson.summary.lowCoverageCount} low coverage`
+            : `✅ All tests passed (${reportJson.summary.passing}/${reportJson.summary.testsRan})`;
+          
+          // Post commit status via GitHub API
+          const token = process.env.GITHUB_TOKEN;
+          const repo = process.env.GITHUB_REPOSITORY;
+          const sha = process.env.GITHUB_SHA;
+          const serverUrl = process.env.GITHUB_SERVER_URL;
+          const runId = process.env.GITHUB_RUN_ID;
+          
+          const [owner, repoName] = repo.split('/');
+          const statusUrl = `${serverUrl}/api/v3/repos/${owner}/${repoName}/statuses/${sha}`;
+          
+          const statusPayload = JSON.stringify({
+            state: state,
+            target_url: `${serverUrl}/${owner}/${repoName}/actions/runs/${runId}`,
+            description: description,
+            context: 'salesforce/tests'
+          });
+          
+          const url = new URL(statusUrl);
+          const options = {
+            hostname: url.hostname,
+            port: 443,
+            path: url.pathname,
+            method: 'POST',
+            headers: {
+              'Authorization': `token ${token}`,
+              'Content-Type': 'application/json',
+              'User-Agent': 'GitHub-Actions'
+            }
+          };
+          
+          const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                console.log(`✅ Posted commit status: ${state} - ${description}`);
+              } else {
+                console.warn(`⚠️ Could not post commit status: ${res.statusCode}`);
+              }
+            });
+          });
+          
+          req.on('error', (error) => {
+            console.warn(`⚠️ Error posting commit status: ${error.message}`);
+          });
+          
+          req.write(statusPayload);
+          req.end();
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job: Send Slack Notification
@@ -462,14 +546,15 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
+
   # ──────────────────────────────────────────────────────────────────────────
-  # Job: Create GitHub Issue on Failures
+  # Job: Upload Report to Confluence
   # ──────────────────────────────────────────────────────────────────────────
-  create-issue:
-    name: Create GitHub Issue
+  upload-confluence:
+    name: Upload to Confluence
     runs-on: ubuntu-latest
     needs: run-tests
-    if: ${{ needs.run-tests.outputs.has_failures == 'true' || needs.run-tests.outputs.has_low_coverage == 'true' }}
+    if: always() && (inputs.upload_confluence != false)
     
     steps:
       - name: Download Report
@@ -478,36 +563,153 @@ jobs:
           name: test-results
           path: ./test-results/
 
-      - name: Create or Update Issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const body = fs.readFileSync('./test-results/report.md', 'utf8');
-            const title = `🔴 Apex Test Issues - ${new Date().toISOString().split('T')[0]}`;
+      - name: Upload Report to Confluence
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const https = require('https');
+          
+          // Confluence configuration
+          const CONFLUENCE_URL = process.env.CONFLUENCE_URL;
+          const CONFLUENCE_USERNAME = process.env.CONFLUENCE_USERNAME;
+          const CONFLUENCE_API_TOKEN = process.env.CONFLUENCE_API_TOKEN;
+          const CONFLUENCE_SPACE_KEY = process.env.CONFLUENCE_SPACE_KEY || 'TEST';
+          const CONFLUENCE_PARENT_PAGE_ID = process.env.CONFLUENCE_PARENT_PAGE_ID || '';
+          
+          if (!CONFLUENCE_URL || !CONFLUENCE_USERNAME || !CONFLUENCE_API_TOKEN) {
+            console.log('⚠️ Confluence credentials not configured. Skipping upload.');
+            process.exit(0);
+          }
+          
+          // Read report files
+          const reportMd = fs.readFileSync('./test-results/report.md', 'utf8');
+          const reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
+          
+          // Generate page title
+          const date = new Date().toISOString().split('T')[0];
+          const status = reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0 ? '❌' : '✅';
+          const pageTitle = `${status} Salesforce Test Report - ${date}`;
+          
+          // Convert markdown to Confluence Storage Format
+          // Basic markdown to HTML conversion for Confluence
+          function markdownToConfluence(md) {
+            let html = md
+              // Headers
+              .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+              .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+              .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+              // Bold
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              // Code blocks
+              .replace(/```[\s\S]*?```/g, (match) => {
+                const code = match.replace(/```/g, '').trim();
+                return `<pre><code>${code}</code></pre>`;
+              })
+              // Inline code
+              .replace(/`([^`]+)`/g, '<code>$1</code>')
+              // Lists
+              .replace(/^- (.*)$/gm, '<li>$1</li>')
+              .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+              // Tables
+              .replace(/\|(.+)\|/g, (match, content) => {
+                const cells = content.split('|').map(c => c.trim()).filter(c => c);
+                return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+              })
+              // Line breaks
+              .replace(/\n\n/g, '</p><p>')
+              .replace(/\n/g, '<br/>');
             
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'apex-test-failure'
-            });
+            return `<p>${html}</p>`;
+          }
+          
+          // Build Confluence page content
+          const statusEmoji = reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0 ? '❌' : '✅';
+          const storageFormat = `
+            <h1>${statusEmoji} Salesforce Test Report</h1>
+            <p><strong>Generated:</strong> ${reportJson.summary.timestamp}</p>
+            <p><strong>Workflow Run:</strong> <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View on GitHub</a></p>
             
-            if (issues.data.length > 0) {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issues.data[0].number,
-                body: body
-              });
-              console.log(`Updated issue #${issues.data[0].number}`);
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: title,
-                body: body,
-                labels: ['apex-test-failure', 'automated']
-              });
-              console.log('Created new issue');
+            <h2>Summary</h2>
+            <table>
+              <tr><th>Metric</th><th>Value</th></tr>
+              <tr><td>Tests Run</td><td>${reportJson.summary.testsRan}</td></tr>
+              <tr><td>Passing</td><td>${reportJson.summary.passing}</td></tr>
+              <tr><td>Failing</td><td>${reportJson.summary.failing}</td></tr>
+              <tr><td>Pass Rate</td><td>${reportJson.summary.passRate}</td></tr>
+              <tr><td>Low Coverage Classes</td><td>${reportJson.summary.lowCoverageCount}</td></tr>
+            </table>
+            
+            ${markdownToConfluence(reportMd)}
+            
+            <hr/>
+            <p><em>Report generated by GitHub Actions workflow</em></p>
+          `;
+          
+          // Create page payload
+          const pagePayload = {
+            type: 'page',
+            title: pageTitle,
+            space: { key: CONFLUENCE_SPACE_KEY },
+            body: {
+              storage: {
+                value: storageFormat,
+                representation: 'storage'
+              }
             }
+          };
+          
+          // Add parent page if specified
+          if (CONFLUENCE_PARENT_PAGE_ID) {
+            pagePayload.ancestors = [{ id: CONFLUENCE_PARENT_PAGE_ID }];
+          }
+          
+          // Create page via Confluence REST API
+          const url = new URL(`${CONFLUENCE_URL}/rest/api/content`);
+          const auth = Buffer.from(`${CONFLUENCE_USERNAME}:${CONFLUENCE_API_TOKEN}`).toString('base64');
+          
+          const options = {
+            hostname: url.hostname,
+            port: url.port || 443,
+            path: url.pathname,
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${auth}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          };
+          
+          const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                const response = JSON.parse(data);
+                console.log(`✅ Successfully uploaded report to Confluence`);
+                console.log(`   Page ID: ${response.id}`);
+                console.log(`   Page URL: ${CONFLUENCE_URL}${response._links.webui}`);
+              } else {
+                console.error(`❌ Failed to upload to Confluence: ${res.statusCode}`);
+                console.error(`   Response: ${data}`);
+                process.exit(1);
+              }
+            });
+          });
+          
+          req.on('error', (error) => {
+            console.error(`❌ Error uploading to Confluence: ${error.message}`);
+            process.exit(1);
+          });
+          
+          req.write(JSON.stringify(pagePayload));
+          req.end();
+          EOF
+        env:
+          CONFLUENCE_URL: ${{ secrets.CONFLUENCE_URL }}
+          CONFLUENCE_USERNAME: ${{ secrets.CONFLUENCE_USERNAME }}
+          CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+          CONFLUENCE_SPACE_KEY: ${{ secrets.CONFLUENCE_SPACE_KEY }}
+          CONFLUENCE_PARENT_PAGE_ID: ${{ secrets.CONFLUENCE_PARENT_PAGE_ID }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
