@@ -92,11 +92,28 @@ jobs:
         if: inputs.test_level == 'RunSpecifiedTests'
         continue-on-error: true
         run: |
-          echo "Available test classes in org:"
+          echo "📋 Available test classes in org (first 20):"
+          echo ""
+          # Query test classes and format output
           sf data query \
             --target-org ${{ env.SF_ORG_ALIAS }} \
             --query "SELECT Name FROM ApexClass WHERE Name LIKE '%Test%' ORDER BY Name LIMIT 20" \
-            --result-format table || echo "Could not list test classes"
+            --result-format json > /tmp/test-classes.json 2>/dev/null || {
+            echo "⚠️ Could not query test classes. You can still specify test class names manually."
+            exit 0
+          }
+          
+          # Parse and display test classes
+          if command -v jq &> /dev/null; then
+            jq -r '.result.records[]?.Name // empty' /tmp/test-classes.json | while read -r class; do
+              echo "  • $class"
+            done
+          else
+            # Fallback: show raw JSON
+            cat /tmp/test-classes.json
+          fi
+          echo ""
+          echo "💡 Tip: Copy the class names above and paste them in the 'specified_tests' input (comma-separated)"
 
       # ────────────────────────────────────────────────────────────────────
       # Run Apex Tests
