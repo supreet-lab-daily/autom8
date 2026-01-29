@@ -395,94 +395,93 @@ jobs:
           const statusColor = isHealthy ? '#28a745' : '#dc3545';
           const statusEmoji = isHealthy ? '✅' : '🔴';
           
-          let html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
-    h1 { color: ${statusColor}; border-bottom: 3px solid ${statusColor}; padding-bottom: 10px; }
-    h2 { color: #0366d6; margin-top: 30px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-    th { background-color: #f6f8fa; font-weight: 600; }
-    .success { color: #28a745; }
-    .failure { color: #dc3545; }
-    .warning { color: #ffc107; }
-    .metric-box { background: #f6f8fa; padding: 15px; border-radius: 6px; margin: 10px 0; }
-    .code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
-    .error-box { background: #fff5f5; border-left: 4px solid #dc3545; padding: 15px; margin: 10px 0; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
-  </style>
-</head>
-<body>
-  <h1>${statusEmoji} Salesforce Apex Test Report</h1>
-  
-  <div class="metric-box">
-    <p><strong>Generated:</strong> ${report.summary.timestamp}</p>
-    <p><strong>Test Run ID:</strong> ${report.summary.testRunId}</p>
-    <p><strong>Workflow:</strong> <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View on GitHub</a></p>
-  </div>
-  
-  <h2>Summary</h2>
-  <table>
-    <tr><th>Metric</th><th>Value</th></tr>
-    <tr><td>Tests Run</td><td><strong>${report.summary.testsRan}</strong></td></tr>
-    <tr><td>Passing</td><td class="success"><strong>${report.summary.passing}</strong></td></tr>
-    <tr><td>Failing</td><td class="${report.summary.failing > 0 ? 'failure' : 'success'}"><strong>${report.summary.failing}</strong></td></tr>
-    <tr><td>Pass Rate</td><td><strong>${report.summary.passRate}</strong></td></tr>
-    <tr><td>Outcome</td><td class="${isHealthy ? 'success' : 'failure'}"><strong>${report.summary.outcome}</strong></td></tr>
-    <tr><td>Org Coverage</td><td><strong>${report.summary.orgWideCoverage}</strong></td></tr>
-    <tr><td>Test Run Coverage</td><td><strong>${report.summary.testRunCoverage}</strong></td></tr>
-    <tr><td>Low Coverage Classes</td><td class="${lowCoverage.length > 0 ? 'warning' : 'success'}"><strong>${lowCoverage.length}</strong></td></tr>
-  </table>
-`;
+          // Build HTML in parts to avoid YAML parsing issues
+          let html = '<!DOCTYPE html>\n';
+          html += '<html>\n';
+          html += '<head>\n';
+          html += '  <meta charset="UTF-8">\n';
+          html += '  <style>\n';
+          html += '    body { font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }\n';
+          html += '    h1 { color: ' + statusColor + '; border-bottom: 3px solid ' + statusColor + '; padding-bottom: 10px; }\n';
+          html += '    h2 { color: #0366d6; margin-top: 30px; }\n';
+          html += '    table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n';
+          html += '    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }\n';
+          html += '    th { background-color: #f6f8fa; font-weight: 600; }\n';
+          html += '    .success { color: #28a745; }\n';
+          html += '    .failure { color: #dc3545; }\n';
+          html += '    .warning { color: #ffc107; }\n';
+          html += '    .metric-box { background: #f6f8fa; padding: 15px; border-radius: 6px; margin: 10px 0; }\n';
+          html += '    .code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: monospace; }\n';
+          html += '    .error-box { background: #fff5f5; border-left: 4px solid #dc3545; padding: 15px; margin: 10px 0; }\n';
+          html += '    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }\n';
+          html += '  </style>\n';
+          html += '</head>\n';
+          html += '<body>\n';
+          html += '  <h1>' + statusEmoji + ' Salesforce Apex Test Report</h1>\n';
+          html += '  \n';
+          html += '  <div class="metric-box">\n';
+          html += '    <p><strong>Generated:</strong> ' + report.summary.timestamp + '</p>\n';
+          html += '    <p><strong>Test Run ID:</strong> ' + report.summary.testRunId + '</p>\n';
+          html += '    <p><strong>Workflow:</strong> <a href="' + process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID + '">View on GitHub</a></p>\n';
+          html += '  </div>\n';
+          html += '  \n';
+          html += '  <h2>Summary</h2>\n';
+          html += '  <table>\n';
+          html += '    <tr><th>Metric</th><th>Value</th></tr>\n';
+          html += '    <tr><td>Tests Run</td><td><strong>' + report.summary.testsRan + '</strong></td></tr>\n';
+          html += '    <tr><td>Passing</td><td class="success"><strong>' + report.summary.passing + '</strong></td></tr>\n';
+          html += '    <tr><td>Failing</td><td class="' + (report.summary.failing > 0 ? 'failure' : 'success') + '"><strong>' + report.summary.failing + '</strong></td></tr>\n';
+          html += '    <tr><td>Pass Rate</td><td><strong>' + report.summary.passRate + '</strong></td></tr>\n';
+          html += '    <tr><td>Outcome</td><td class="' + (isHealthy ? 'success' : 'failure') + '"><strong>' + report.summary.outcome + '</strong></td></tr>\n';
+          html += '    <tr><td>Org Coverage</td><td><strong>' + report.summary.orgWideCoverage + '</strong></td></tr>\n';
+          html += '    <tr><td>Test Run Coverage</td><td><strong>' + report.summary.testRunCoverage + '</strong></td></tr>\n';
+          html += '    <tr><td>Low Coverage Classes</td><td class="' + (lowCoverage.length > 0 ? 'warning' : 'success') + '"><strong>' + lowCoverage.length + '</strong></td></tr>\n';
+          html += '  </table>\n';
           
           if (report.failingClasses.length > 0) {
-            html += `<h2 class="failure">❌ Failing Test Classes</h2>`;
+            html += '  <h2 class="failure">❌ Failing Test Classes</h2>\n';
             report.failingClasses.forEach(f => {
-              html += `<div class="error-box">`;
-              html += `<h3><span class="code">${f.className}</span></h3>`;
+              html += '  <div class="error-box">\n';
+              html += '    <h3><span class="code">' + f.className + '</span></h3>\n';
               if (f.lastCommitter) {
-                html += `<p><strong>Last Modified:</strong> ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}</p>`;
+                html += '    <p><strong>Last Modified:</strong> ' + f.lastCommitter.name + ' (' + f.lastCommitter.email + ') on ' + f.lastCommitter.date + '</p>\n';
               }
-              html += `<p><strong>Failed Methods:</strong></p><ul>`;
+              html += '    <p><strong>Failed Methods:</strong></p><ul>\n';
               f.methods.forEach(m => {
-                html += `<li><span class="code">${m.methodName}</span>`;
-                if (m.message) html += `<br><em>${m.message.substring(0, 200)}</em>`;
-                html += `</li>`;
+                html += '      <li><span class="code">' + m.methodName + '</span>';
+                if (m.message) html += '<br><em>' + m.message.substring(0, 200).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</em>';
+                html += '</li>\n';
               });
-              html += `</ul></div>`;
+              html += '    </ul></div>\n';
             });
           }
           
           if (lowCoverage.length > 0) {
-            html += `<h2 class="warning">📉 Classes Below ${threshold}% Coverage</h2>`;
-            html += `<p><strong>Warning:</strong> ${lowCoverage.length} classes are below the ${threshold}% coverage threshold.</p>`;
-            html += `<table>`;
-            html += `<tr><th>Class</th><th>Coverage</th><th>Lines</th><th>Last Modified By</th></tr>`;
+            html += '  <h2 class="warning">📉 Classes Below ' + threshold + '% Coverage</h2>\n';
+            html += '  <p><strong>Warning:</strong> ' + lowCoverage.length + ' classes are below the ' + threshold + '% coverage threshold.</p>\n';
+            html += '  <table>\n';
+            html += '    <tr><th>Class</th><th>Coverage</th><th>Lines</th><th>Last Modified By</th></tr>\n';
             lowCoverage.slice(0, 10).forEach(c => {
               const coverageClass = c.coveragePercentage < 50 ? 'failure' : 'warning';
-              html += `<tr>`;
-              html += `<td><span class="code">${c.className}</span></td>`;
-              html += `<td class="${coverageClass}"><strong>${c.coveragePercentage.toFixed(1)}%</strong></td>`;
-              html += `<td>${c.linesCovered}/${c.totalLines}</td>`;
-              html += `<td>${c.lastCommitter?.name || 'Unknown'}</td>`;
-              html += `</tr>`;
+              html += '    <tr>\n';
+              html += '      <td><span class="code">' + c.className + '</span></td>\n';
+              html += '      <td class="' + coverageClass + '"><strong>' + c.coveragePercentage.toFixed(1) + '%</strong></td>\n';
+              html += '      <td>' + c.linesCovered + '/' + c.totalLines + '</td>\n';
+              html += '      <td>' + (c.lastCommitter?.name || 'Unknown') + '</td>\n';
+              html += '    </tr>\n';
             });
-            html += `</table>`;
+            html += '  </table>\n';
             if (lowCoverage.length > 10) {
-              html += `<p><em>... and ${lowCoverage.length - 10} more classes below threshold</em></p>`;
+              html += '  <p><em>... and ' + (lowCoverage.length - 10) + ' more classes below threshold</em></p>\n';
             }
           }
           
-          html += `
-  <div class="footer">
-    <p>This report was generated automatically by the Salesforce DevOps Pipeline.</p>
-    <p>For full details, see the <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">GitHub Actions workflow run</a>.</p>
-  </div>
-</body>
-</html>`;
+          html += '  <div class="footer">\n';
+          html += '    <p>This report was generated automatically by the Salesforce DevOps Pipeline.</p>\n';
+          html += '    <p>For full details, see the <a href="' + process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID + '">GitHub Actions workflow run</a>.</p>\n';
+          html += '  </div>\n';
+          html += '</body>\n';
+          html += '</html>';
           
           fs.writeFileSync('./test-results/report.html', html);
           
