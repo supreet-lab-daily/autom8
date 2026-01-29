@@ -1,197 +1,275 @@
 # Salesforce Test Automation with GitHub Actions
 
-This project provides an automated test suite for Salesforce that runs on a schedule via GitHub Actions. It generates comprehensive test reports including test results, failing classes, code coverage information, and last committer details.
+A comprehensive, scalable Salesforce test automation solution using GitHub Actions composite actions. This solution runs tests against a remote Salesforce org, generates detailed reports, and sends notifications to Slack, MS Teams, or Email.
 
 ## Features
 
+- ✅ **Pure GitHub Actions Solution**: All logic implemented as reusable composite actions
 - ✅ **Scheduled Test Runs**: Automatically runs tests daily (configurable)
-- ✅ **Comprehensive Reports**: Generates JSON, Markdown, and HTML reports
-- ✅ **Test Result Summary**: Total tests, passed, failed, skipped, and duration
-- ✅ **Failing Classes**: Identifies classes with failing tests and their last committers
-- ✅ **Coverage Analysis**: Finds classes with coverage less than 95%
-- ✅ **Committer Tracking**: Shows who last modified each class
-- ✅ **PR Integration**: Automatically comments on pull requests with test results
-- ✅ **Failure Notifications**: Creates GitHub issues when tests fail
+- ✅ **RunAllTestsInOrg**: Executes all tests including managed packages
+- ✅ **Comprehensive Reports**: JSON format (ready for Slack/MS Teams/Confluence ingestion)
+- ✅ **Coverage Analysis**: Flags classes with coverage < 95%
+- ✅ **Committer Tracking**: Shows last committer for failing classes
+- ✅ **Report Storage**: Stores reports in repository with timestamped directories
+- ✅ **Notifications**: Supports Slack, MS Teams, and Email notifications
+- ✅ **Non-Blocking**: Workflow never fails, only captures and reports issues
+- ✅ **Scalable Architecture**: Modular composite actions following best practices
+
+## Architecture
+
+The solution uses composite actions for modularity and reusability:
+
+```
+.github/
+├── workflows/
+│   └── salesforce-tests.yml          # Main workflow
+└── actions/
+    ├── salesforce-auth/              # Authentication composite action
+    ├── run-salesforce-tests/         # Test execution composite action
+    ├── generate-report/              # Report generation composite action
+    └── send-notification/            # Notification composite action
+```
 
 ## Prerequisites
 
-1. **Salesforce CLI (sf CLI)**: Must be installed and configured
-   ```bash
-   npm install -g @salesforce/cli
-   ```
-
-2. **GitHub Secrets**: Configure the following secrets in your GitHub repository:
-   - `SF_USERNAME`: Salesforce username
+1. **Salesforce Org**: Access to a Salesforce sandbox or production org
+2. **GitHub Secrets**: Configure the following secrets in your repository:
+   - `SF_USERNAME`: Salesforce username (full email)
    - `SF_PASSWORD`: Salesforce password
    - `SF_SECURITY_TOKEN`: Salesforce security token
    - `SF_LOGIN_URL`: (Optional) Salesforce login URL (defaults to `https://test.salesforce.com`)
+   - `SLACK_WEBHOOK_URL`: (Optional) Slack webhook URL for notifications
+   - `TEAMS_WEBHOOK_URL`: (Optional) MS Teams webhook URL for notifications
+   - `EMAIL_TO`: (Optional) Email address for notifications
 
 ## Setup
 
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
+### 1. Configure GitHub Secrets
 
-2. **Configure GitHub Secrets**:
-   - Go to your repository → Settings → Secrets and variables → Actions
-   - Add the required secrets listed above
+Go to your repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-3. **Customize Schedule** (Optional):
-   - Edit `.github/workflows/salesforce-tests.yml`
-   - Modify the cron schedule in the `on.schedule` section
-   - Use [crontab.guru](https://crontab.guru/) to create custom schedules
+Add the required secrets listed above.
+
+### 2. Customize Schedule (Optional)
+
+Edit `.github/workflows/salesforce-tests.yml`:
+
+```yaml
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+```
+
+Use [crontab.guru](https://crontab.guru/) to create custom schedules.
+
+### 3. Configure Notifications (Optional)
+
+Add webhook URLs or email addresses to GitHub Secrets:
+- **Slack**: Create an incoming webhook at https://api.slack.com/messaging/webhooks
+- **MS Teams**: Create an incoming webhook connector in Teams
+- **Email**: Uses system mail service (may require additional configuration)
 
 ## Usage
 
 ### Manual Execution
 
-Run tests locally:
-```bash
-npm run run-tests
-```
+1. Go to **Actions** tab in GitHub
+2. Select **Salesforce Test Suite** workflow
+3. Click **Run workflow**
+4. Select branch and click **Run workflow**
 
-Generate report from existing test results:
-```bash
-npm run generate-report
-```
-
-### Automated Execution
+### Automatic Execution
 
 The workflow runs automatically:
 - **On Schedule**: Daily at 2 AM UTC (configurable)
 - **On Push**: To `main` or `develop` branches
 - **Manual**: Via GitHub Actions UI (workflow_dispatch)
 
-### Viewing Reports
-
-After a workflow run:
-1. Go to the Actions tab in GitHub
-2. Click on the workflow run
-3. Download the `salesforce-test-report` artifact
-4. Extract and view `test-report.html` in a browser
-
 ## Report Structure
 
-### Test Summary
-- Total tests executed
-- Number of passed/failed/skipped tests
-- Total execution time
-- Overall code coverage percentage
+Reports are generated in JSON format (ready for ingestion) and stored in:
 
-### Failing Classes
-- Class names with failing tests
-- Last committer name and email
-- Last modification date
+- **Artifacts**: Downloadable from workflow runs (30-day retention)
+- **Repository**: `test-reports/TIMESTAMP/` directory (timestamped for historical tracking)
 
-### Low Coverage Classes (<95%)
-- Class names with coverage below threshold
-- Coverage percentage
-- Lines covered vs total lines
-- Last committer information
+### Report Format (JSON)
 
-## Testing
-
-Run the test suite:
-```bash
-npm test
+```json
+{
+  "timestamp": "2024-01-15T10:30:00Z",
+  "summary": {
+    "totalTests": 150,
+    "passed": 145,
+    "failed": 5,
+    "skipped": 0,
+    "totalDuration": 8500,
+    "overallCoverage": "92.5%"
+  },
+  "failingClasses": [
+    {
+      "className": "AccountServiceTest",
+      "lastCommitter": {
+        "name": "John Doe",
+        "email": "john@example.com",
+        "date": "2024-01-10T14:20:00-05:00"
+      }
+    }
+  ],
+  "lowCoverageClasses": [
+    {
+      "className": "UtilityClass",
+      "coveragePercent": "87.5",
+      "linesCovered": 70,
+      "linesTotal": 80
+    }
+  ],
+  "metadata": {
+    "coverageThreshold": 95,
+    "testLevel": "RunAllTestsInOrg"
+  }
+}
 ```
 
-Run tests in watch mode:
-```bash
-npm run test:watch
+## Report Formats
+
+### JSON (Default)
+- Ready for Slack/MS Teams/Confluence ingestion
+- Stored in `test-reports/TIMESTAMP/test-report.json`
+
+### Markdown (Optional)
+- Human-readable format
+- Stored in `test-reports/TIMESTAMP/test-report.md`
+
+## Integration Examples
+
+### Slack Integration
+
+The JSON report can be easily ingested by Slack:
+
+```javascript
+// Example: Parse and send to Slack
+const report = require('./test-reports/20240115-020000/test-report.json');
+// Use Slack Block Kit or webhook to format and send
 ```
 
-Generate coverage report:
-```bash
-npm run test:coverage
+### MS Teams Integration
+
+MS Teams accepts JSON format for Adaptive Cards:
+
+```json
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "content": {
+      // Use report data to build Adaptive Card
+    }
+  }]
+}
 ```
+
+### Confluence Integration
+
+Upload JSON reports to Confluence using the Confluence API or import as structured data.
 
 ## Configuration
 
 ### Adjust Coverage Threshold
 
-Edit `scripts/generate-test-report.js` and change the coverage threshold:
-```javascript
-const coveragePercent = numLocations > 0 
-  ? ((numLocations - numLocationsNotCovered) / numLocations) * 100 
-  : 100;
-return coveragePercent < 95; // Change 95 to your desired threshold
+Edit `.github/workflows/salesforce-tests.yml`:
+
+```yaml
+- name: Generate Test Report
+  uses: ./.github/actions/generate-report
+  with:
+    coverage_threshold: '95'  # Change to desired threshold
 ```
 
-### Customize Test Level
+### Change Test Level
+
+Edit `.github/actions/run-salesforce-tests/action.yml`:
+
+```yaml
+inputs:
+  test_level:
+    default: 'RunAllTestsInOrg'  # Options: RunLocalTests, RunSpecifiedTests, RunAllTestsInOrg
+```
+
+### Modify Notification Settings
 
 Edit `.github/workflows/salesforce-tests.yml`:
+
 ```yaml
-sf apex run test --test-level RunLocalTests
-```
-
-Available test levels:
-- `RunLocalTests`: Run all tests in your org
-- `RunSpecifiedTests`: Run specific test classes
-- `RunAllTestsInOrg`: Run all tests (including managed packages)
-
-### Modify Schedule
-
-Edit the cron expression in `.github/workflows/salesforce-tests.yml`:
-```yaml
-schedule:
-  - cron: '0 2 * * *'  # Daily at 2 AM UTC
-```
-
-Examples:
-- `'0 */6 * * *'` - Every 6 hours
-- `'0 9 * * 1-5'` - Weekdays at 9 AM UTC
-- `'0 0 * * 0'` - Weekly on Sunday at midnight
-
-## Project Structure
-
-```
-.
-├── .github/
-│   └── workflows/
-│       └── salesforce-tests.yml    # GitHub Actions workflow
-├── scripts/
-│   ├── run-salesforce-tests.js     # Test execution script
-│   ├── generate-test-report.js     # Report generation script
-│   └── __tests__/                  # Test files
-│       ├── run-salesforce-tests.test.js
-│       └── generate-test-report.test.js
-├── reports/                        # Generated reports (gitignored)
-├── package.json
-├── jest.config.js
-└── README.md
+- name: Send Notifications
+  uses: ./.github/actions/send-notification
+  with:
+    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+    teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+    email_to: ${{ secrets.EMAIL_TO }}
 ```
 
 ## Troubleshooting
 
 ### Authentication Issues
 
-If you encounter authentication errors:
-1. Verify your Salesforce credentials in GitHub Secrets
-2. Ensure your security token is correct
-3. Check if your IP is whitelisted in Salesforce
+- Verify Salesforce credentials in GitHub Secrets
+- Ensure security token is correct (reset if needed)
+- Check if IP is whitelisted in Salesforce
 
 ### Test Execution Failures
 
-If tests fail to run:
-1. Verify Salesforce CLI is installed: `sf --version`
-2. Check test class names and ensure they exist
-3. Review Salesforce org permissions
+- Verify Salesforce CLI is working (automatically installed)
+- Check test classes exist in your org
+- Review Salesforce org permissions
 
 ### Missing Committer Information
 
-If committer info is missing:
-1. Ensure git history is available (use `fetch-depth: 0` in checkout)
-2. Verify class files exist in the repository
-3. Check file paths match Salesforce project structure
+- Ensure `fetch-depth: 0` is set (already configured)
+- Verify class files exist in the repository
+- Check git history is available
+
+### Notification Issues
+
+- Verify webhook URLs are correct
+- Check webhook permissions
+- For email, ensure mail service is configured in runner
+
+## Best Practices
+
+1. **Regular Monitoring**: Check reports regularly to catch issues early
+2. **Coverage Goals**: Maintain coverage above threshold
+3. **Historical Tracking**: Review reports in `test-reports/` directory
+4. **Notification Setup**: Configure at least one notification channel
+5. **Secret Management**: Rotate Salesforce credentials regularly
+
+## Project Structure
+
+```
+.
+├── .github/
+│   ├── workflows/
+│   │   └── salesforce-tests.yml
+│   └── actions/
+│       ├── salesforce-auth/
+│       │   └── action.yml
+│       ├── run-salesforce-tests/
+│       │   └── action.yml
+│       ├── generate-report/
+│       │   └── action.yml
+│       └── send-notification/
+│           └── action.yml
+├── test-reports/              # Historical reports (tracked)
+├── reports/                   # Temporary reports (gitignored)
+├── .gitignore
+└── README.md
+```
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests for new functionality
+4. Test with workflow_dispatch
 5. Submit a pull request
 
 ## License

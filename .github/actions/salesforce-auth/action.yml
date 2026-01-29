@@ -40,34 +40,69 @@ runs:
         SF_LOGIN_URL: ${{ inputs.login_url }}
       run: |
         # Authenticate to Salesforce using username/password with security token
-        # Create auth URL in format: force://PlatformCLI::ACCESS_TOKEN@INSTANCE_URL
-        # For username/password auth, we encode: username:password+security_token
-        FULL_PASSWORD="${SF_PASSWORD}${SF_SECURITY_TOKEN}"
-        AUTH_URL="force://PlatformCLI::$(echo -n "${SF_USERNAME}:${FULL_PASSWORD}" | base64 -w 0)@${SF_LOGIN_URL}"
+        # Use sfdx auth:sfdxurl:store for non-interactive authentication
+        # Format: force://PlatformCLI::BASE64_ENCODED_CREDENTIALS@INSTANCE_URL
+        # Credentials format: username:password+security_token
         
-        # Store authentication using sfdx-url method (non-interactive)
-        echo "$AUTH_URL" | sf org login sfdx-url \
-          --sfdx-url-file /dev/stdin \
-          --alias ${{ inputs.alias }} || {
-          # Fallback: Try with legacy sfdx command
-          echo "Trying legacy sfdx authentication..."
-          echo "$AUTH_URL" | sfdx auth:sfdxurl:store \
-            --sfdxurlfile /dev/stdin \
+        FULL_PASSWORD="${SF_PASSWORD}${SF_SECURITY_TOKEN}"
+        
+        # Base64 encode username:password+token (without newline)
+        ENCODED_CREDS=$(echo -n "${SF_USERNAME}:${FULL_PASSWORD}" | base64 | tr -d '\n')
+        
+        # Build auth URL - remove https:// from login URL if present for instance URL
+        INSTANCE_URL="${SF_LOGIN_URL}"
+        INSTANCE_URL="${INSTANCE_URL#https://}"
+        INSTANCE_URL="${INSTANCE_URL#http://}"
+        
+        AUTH_URL="force://PlatformCLI::${ENCODED_CREDS}@${INSTANCE_URL}"
+        
+        echo "Attempting authentication to: ${INSTANCE_URL}"
+        
+        # Create temporary file for auth URL (more reliable than stdin)
+        AUTH_FILE=$(mktemp)
+        echo "$AUTH_URL" > "$AUTH_FILE"
+        
+        # Try modern sf CLI first
+        sf org login sfdx-url \
+          --sfdx-url-file "$AUTH_FILE" \
+          --alias ${{ inputs.alias }} 2>&1 || {
+          
+          # Fallback: Try legacy sfdx command
+          echo "Modern sf CLI failed, trying legacy sfdx..."
+          sfdx auth:sfdxurl:store \
+            --sfdxurlfile "$AUTH_FILE" \
             --setalias ${{ inputs.alias }} \
-            --setdefaultusername ${{ inputs.username }} || {
+            --setdefaultusername ${{ inputs.username }} 2>&1 || {
+            
+            # Clean up temp file
+            rm -f "$AUTH_FILE"
+            
             echo "Error: Authentication failed with both methods."
-            echo "Please verify:"
-            echo "  - Username: $SF_USERNAME"
-            echo "  - Login URL: $SF_LOGIN_URL"
-            echo "  - Security token is correct"
+            echo "Debug info:"
+            echo "  - Username: ${SF_USERNAME}"
+            echo "  - Login URL: ${SF_LOGIN_URL}"
+            echo "  - Instance URL: ${INSTANCE_URL}"
+            echo "  - Auth URL format: force://PlatformCLI::[encoded]@${INSTANCE_URL}"
+            echo ""
+            echo "Common issues:"
+            echo "  1. Security token might be incorrect"
+            echo "  2. Username/password might be incorrect"
+            echo "  3. IP might not be whitelisted in Salesforce"
+            echo "  4. Login URL might be wrong (use https://test.salesforce.com for sandbox)"
+            rm -f "$AUTH_FILE"
             exit 1
           }
         }
         
-        # Verify authentication
+        # Clean up temp file
+        rm -f "$AUTH_FILE"
+        
+        # Verify authentication worked
+        echo "Verifying authentication..."
         sf org display --target-org ${{ inputs.alias }} || \
-        sfdx force:org:display --targetusername ${{ inputs.alias }} || \
-        echo "Warning: Could not verify org, but authentication command completed"
+        sfdx force:org:display --targetusername ${{ inputs.alias }} || {
+          echo "Warning: Could not verify org display, but authentication command completed"
+        }
         
         # Set as default org
         sf config set target-org=${{ inputs.alias }} || \
