@@ -1,0 +1,103 @@
+{
+  "summary": {
+    "outcome": "Failed",
+    "testsRan": 27,
+    "passing": 26,
+    "failing": 1,
+    "passRate": "96%",
+    "testRunId": "707O2000029uCd2",
+    "orgWideCoverage": "90%",
+    "testRunCoverage": "92%",
+    "timestamp": "2026-01-29T18:57:35.998Z",
+    "reportDate": "2026-01-29",
+    "coverageThreshold": 95,
+    "lowCoverageCount": 9
+  },
+  "failingClasses": [
+    {
+      "className": "ESMCustomMatrixEligibilityImplTest",
+      "methods": [
+        {
+          "methodName": "testcheckEligibility",
+          "message": "System.NullPointerException: Attempt to de-reference a null object",
+          "stackTrace": "Class.ESMCustomMatrixEligibilityImpl.checkEligibility: line 207, column 1\nClass.ESMCustomMatrixEligibilityImpl.invokeMethod: line 36, column 1\nClass.ESMCustomMatrixEligibilityImpl.call: line 65, column 1\nClass.ESMCustomMatrixEligibilityImplTest.testcheckEligibility: line 63, column 1"
+        }
+      ],
+      "lastCommitter": null
+    }
+  ],
+  "lowCoverageClasses": [
+    {
+      "className": "ESMCustomMatrixEligibilityImpl",
+      "linesCovered": 115,
+      "linesUncovered": 77,
+      "totalLines": 192,
+      "coveragePercentage": 59.9,
+      "lastCommitter": null
+    },
+    {
+      "className": "LoggerCache",
+      "linesCovered": 74,
+      "linesUncovered": 12,
+      "totalLines": 86,
+      "coveragePercentage": 86.05,
+      "lastCommitter": null
+    },
+    {
+      "className": "LoggerSObjectHandler",
+      "linesCovered": 104,
+      "linesUncovered": 13,
+      "totalLines": 117,
+      "coveragePercentage": 88.89,
+      "lastCommitter": null
+    },
+    {
+      "className": "Logger",
+      "linesCovered": 988,
+      "linesUncovered": 89,
+      "totalLines": 1077,
+      "coveragePercentage": 91.74,
+      "lastCommitter": null
+    },
+    {
+      "className": "LogEntryEventBuilder",
+      "linesCovered": 587,
+      "linesUncovered": 49,
+      "totalLines": 636,
+      "coveragePercentage": 92.3,
+      "lastCommitter": null
+    },
+    {
+      "className": "LoggerEmailSender",
+      "linesCovered": 88,
+      "linesUncovered": 7,
+      "totalLines": 95,
+      "coveragePercentage": 92.63,
+      "lastCommitter": null
+    },
+    {
+      "className": "LogEntryEventHandler",
+      "linesCovered": 457,
+      "linesUncovered": 34,
+      "totalLines": 491,
+      "coveragePercentage": 93.08,
+      "lastCommitter": null
+    },
+    {
+      "className": "LoggerPlugin",
+      "linesCovered": 61,
+      "linesUncovered": 4,
+      "totalLines": 65,
+      "coveragePercentage": 93.85,
+      "lastCommitter": null
+    },
+    {
+      "className": "StateCodes",
+      "linesCovered": 940,
+      "linesUncovered": 60,
+      "totalLines": 1000,
+      "coveragePercentage": 94,
+      "lastCommitter": null
+    }
+  ]
+}
