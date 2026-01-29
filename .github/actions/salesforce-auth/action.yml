@@ -37,7 +37,12 @@ runs:
         SF_SECURITY_TOKEN: ${{ inputs.security_token }}
         SF_LOGIN_URL: ${{ inputs.login_url }}
       run: |
+        # Authenticate to Salesforce
         echo "$SF_SECURITY_TOKEN$SF_PASSWORD" | sf org login web \
           --instance-url $SF_LOGIN_URL \
-          --alias ${{ inputs.alias }} \
-          --set-default-username $SF_USERNAME
+          --alias ${{ inputs.alias }}
+        
+        # Set as default org
+        sf config set target-org=${{ inputs.alias }} || \
+        sf config set defaultusername=${{ inputs.alias }} || \
+        echo "Note: Could not set default org, but authentication succeeded"
