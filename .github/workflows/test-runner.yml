@@ -1,5 +1,5 @@
 # ============================================================================
-# Scheduled Salesforce Test Runner
+# Scheduled Salesforce Test Runner (FIXED)
 # ============================================================================
 # Runs Apex tests on a schedule and generates comprehensive reports including:
 # - Test pass/fail summary
@@ -134,32 +134,37 @@ jobs:
           TEST_EXIT=${TEST_EXIT:-0}
           echo "CLI exit code: $TEST_EXIT"
           
-          # Find the result file (SF CLI names it test-result-<id>.json)
-          RESULT_FILE=$(find ./test-results -name "test-result-*.json" -type f | head -1)
+          # FIX 1: Find ONLY the main test result file (not coverage files)
+          # The main file format is: test-result-<ID>.json (no suffix)
+          # Coverage files have suffixes: test-result-<ID>-codecoverage.json
+          # There's also a standalone: test-result-codecoverage.json
+          RESULT_FILE=$(find ./test-results -name "test-result-*.json" -type f ! -name "*-codecoverage.json" ! -name "*-junit.xml" | head -1)
           
           if [[ -z "$RESULT_FILE" ]]; then
             echo "::error::No test result file found. Execution may have failed."
+            echo "::group::Available files"
+            ls -lh ./test-results/
+            echo "::endgroup::"
             exit 1
           fi
           
+          echo "✅ Found test result file: $RESULT_FILE"
+          
           # Copy to consistent filename for downstream steps
           cp "$RESULT_FILE" ./test-results/test-results.json
-          echo "✅ Test results saved to ./test-results/test-results.json"
           
           # Debug: Show the structure of the result file
-          echo "::group::Result File Structure (first 100 lines)"
-          head -100 ./test-results/test-results.json
-          echo "::endgroup::"
-          
-          # Quick summary from results
+          echo "::group::Result File Structure"
           node -e "
             const raw = require('./test-results/test-results.json');
             const r = raw.result || raw;
             const s = r.summary || {};
             const tests = r.tests || [];
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('📊 Quick Summary');
+            console.log('📊 Test Results Structure Validation');
+            console.log('   File type: ' + (Array.isArray(raw) ? 'ARRAY (WRONG!)' : 'OBJECT (CORRECT)'));
             console.log('   Has result wrapper: ' + !!raw.result);
+            console.log('   Has summary: ' + !!(r.summary));
             console.log('   Tests in array: ' + tests.length);
             console.log('   Summary.testsRan: ' + (s.testsRan || 'N/A'));
             console.log('   Summary.passing: ' + (s.passing || 'N/A'));
@@ -167,23 +172,13 @@ jobs:
             console.log('   Outcome: ' + (s.outcome || 'Unknown'));
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           "
+          echo "::endgroup::"
           
           # Fail only on execution errors, not test failures
           if [[ $TEST_EXIT -ne 0 && $TEST_EXIT -ne 100 ]]; then
             echo "::error::Test execution failed with code $TEST_EXIT"
             exit $TEST_EXIT
           fi
-
-      # ────────────────────────────────────────────────────────────────────
-      # Fetch Coverage Data
-      # ────────────────────────────────────────────────────────────────────
-      - name: Fetch Coverage Data
-        run: |
-          sf data query \
-            --target-org ${{ env.SF_ORG_ALIAS }} \
-            --query "SELECT ApexClassOrTrigger.Name, NumLinesCovered, NumLinesUncovered FROM ApexCodeCoverageAggregate ORDER BY ApexClassOrTrigger.Name" \
-            --result-format json \
-            > ./test-results/coverage-aggregate.json 2>/dev/null || echo '{"result":{"records":[]}}' > ./test-results/coverage-aggregate.json
 
       # ────────────────────────────────────────────────────────────────────
       # Analyze Results and Generate Report
@@ -198,6 +193,13 @@ jobs:
           // ── Load test results ──
           const rawData = JSON.parse(fs.readFileSync('./test-results/test-results.json', 'utf8'));
           
+          // FIX 2: Add validation to catch wrong file type
+          if (Array.isArray(rawData)) {
+            console.error('❌ ERROR: test-results.json is an array (coverage data), not test results!');
+            console.error('   This means the wrong file was copied in the previous step.');
+            process.exit(1);
+          }
+          
           // Handle both SF CLI output structures:
           // 1. Direct: { summary: {...}, tests: [...] }
           // 2. Wrapped: { status: 0, result: { summary: {...}, tests: [...] } }
@@ -210,34 +212,55 @@ jobs:
           console.log('   Has result wrapper:', !!rawData.result);
           console.log('   Summary keys:', Object.keys(summary).join(', ') || 'none');
           console.log('   Tests count:', tests.length);
+          console.log('   Tests ran:', summary.testsRan);
+          console.log('   Passing:', summary.passing);
+          console.log('   Failing:', summary.failing);
           
-          // ── Load coverage data ──
-          let coverageRecords = [];
-          try {
-            const coverageData = JSON.parse(fs.readFileSync('./test-results/coverage-aggregate.json', 'utf8'));
-            coverageRecords = coverageData.result?.records || [];
-          } catch (e) {
-            console.warn('⚠️ Could not load coverage data');
+          // FIX 3: Use coverage data from SF CLI output instead of separate query
+          // The SF CLI includes coverage data in the test results or separate coverage file
+          let coverageData = [];
+          
+          // First try: Check if coverage is embedded in test results
+          if (testData.coverage?.coverage) {
+            console.log('✅ Using embedded coverage data from test results');
+            coverageData = testData.coverage.coverage;
+          } else {
+            // Second try: Load from separate codecoverage file
+            try {
+              const coverageFile = './test-results/test-result-codecoverage.json';
+              if (fs.existsSync(coverageFile)) {
+                const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
+                // This file is an array of coverage objects
+                coverageData = Array.isArray(coverage) ? coverage : [];
+                console.log(`✅ Loaded coverage from ${coverageFile}: ${coverageData.length} classes`);
+              }
+            } catch (e) {
+              console.warn('⚠️ Could not load separate coverage file:', e.message);
+            }
           }
           
           // ── Parse coverage ──
           const threshold = parseFloat(process.env.COVERAGE_THRESHOLD || '95');
-          const coverage = coverageRecords.map(r => {
-            const covered = parseInt(r.NumLinesCovered) || 0;
-            const uncovered = parseInt(r.NumLinesUncovered) || 0;
-            const total = covered + uncovered;
+          const coverage = coverageData.map(c => {
+            const covered = parseInt(c.totalCovered || c.numLinesCovered || 0);
+            const total = parseInt(c.totalLines || 0);
+            const uncovered = total - covered;
+            const percentage = total > 0 ? Math.round((covered / total) * 10000) / 100 : 0;
+            
             return {
-              className: r.ApexClassOrTrigger?.Name || 'Unknown',
+              className: c.name || c.apexClassOrTrigger?.name || 'Unknown',
               linesCovered: covered,
               linesUncovered: uncovered,
               totalLines: total,
-              coveragePercentage: total > 0 ? Math.round((covered / total) * 10000) / 100 : 0
+              coveragePercentage: percentage
             };
           });
           
           const lowCoverage = coverage
             .filter(c => c.coveragePercentage < threshold && c.totalLines > 0)
             .sort((a, b) => a.coveragePercentage - b.coveragePercentage);
+          
+          console.log(`📊 Coverage analysis: ${coverage.length} classes, ${lowCoverage.length} below ${threshold}%`);
           
           // ── Parse failures and group by class ──
           const failuresByClass = {};
@@ -286,8 +309,10 @@ jobs:
               testsRan: parseInt(summary.testsRan) || tests.length || 0,
               passing: parseInt(summary.passing) || tests.filter(t => (t.Outcome || t.outcome) === 'Pass').length || 0,
               failing: parseInt(summary.failing) || tests.filter(t => (t.Outcome || t.outcome) === 'Fail').length || 0,
-              passRate: summary.passRate || '0%',
+              passRate: summary.passRate || (summary.testsRan > 0 ? `${Math.round((summary.passing / summary.testsRan) * 100)}%` : '0%'),
               testRunId: summary.testRunId || 'N/A',
+              orgWideCoverage: summary.orgWideCoverage || 'N/A',
+              testRunCoverage: summary.testRunCoverage || 'N/A',
               timestamp: new Date().toISOString(),
               coverageThreshold: threshold,
               lowCoverageCount: lowCoverage.length
@@ -308,6 +333,8 @@ jobs:
           md += `| Passing | ${report.summary.passing} |\n`;
           md += `| Failing | ${report.summary.failing} |\n`;
           md += `| Pass Rate | ${report.summary.passRate} |\n`;
+          md += `| Org-Wide Coverage | ${report.summary.orgWideCoverage} |\n`;
+          md += `| Test Run Coverage | ${report.summary.testRunCoverage} |\n`;
           md += `| Classes Below ${threshold}% | ${lowCoverage.length} |\n\n`;
           
           if (report.failingClasses.length > 0) {
@@ -316,16 +343,23 @@ jobs:
               md += `### \`${f.className}\`\n`;
               if (f.lastCommitter) md += `**Last Committer:** ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}\n\n`;
               md += `**Failed Methods:**\n`;
-              f.methods.forEach(m => md += `- \`${m.methodName}\`${m.message ? ': ' + m.message.substring(0, 100) : ''}\n`);
+              f.methods.forEach(m => {
+                md += `- \`${m.methodName}\`\n`;
+                if (m.message) md += `  - Error: ${m.message.substring(0, 150)}\n`;
+                if (m.stackTrace) {
+                  const firstLine = m.stackTrace.split('\n')[0];
+                  md += `  - Stack: ${firstLine.substring(0, 100)}\n`;
+                }
+              });
               md += `\n`;
             });
           }
           
           if (lowCoverage.length > 0) {
             md += `## 📉 Classes Below ${threshold}% Coverage\n\n`;
-            md += `| Class | Coverage | Last Committer |\n|-------|----------|----------------|\n`;
+            md += `| Class | Coverage | Lines Covered/Total | Last Committer |\n|-------|----------|---------------------|----------------|\n`;
             lowCoverage.slice(0, 15).forEach(c => {
-              md += `| \`${c.className}\` | ${c.coveragePercentage.toFixed(1)}% | ${c.lastCommitter?.name || 'Unknown'} |\n`;
+              md += `| \`${c.className}\` | ${c.coveragePercentage.toFixed(1)}% | ${c.linesCovered}/${c.totalLines} | ${c.lastCommitter?.name || 'Unknown'} |\n`;
             });
           }
           
@@ -339,6 +373,10 @@ jobs:
               { type: 'mrkdwn', text: `*Pass Rate:*\n${report.summary.passRate}` },
               { type: 'mrkdwn', text: `*Failures:*\n${report.summary.failing}` },
               { type: 'mrkdwn', text: `*Low Coverage:*\n${lowCoverage.length} classes` }
+            ]},
+            { type: 'section', fields: [
+              { type: 'mrkdwn', text: `*Org Coverage:*\n${report.summary.orgWideCoverage}` },
+              { type: 'mrkdwn', text: `*Run Coverage:*\n${report.summary.testRunCoverage}` }
             ]},
             { type: 'divider' }
           ];
@@ -358,7 +396,7 @@ jobs:
             blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lowCoverage.slice(0, 5).map(c => `• \`${c.className}\` - ${c.coveragePercentage.toFixed(1)}%`).join('\n') } });
           }
           
-          blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 ${new Date().toISOString()}` }] });
+          blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 ${new Date().toISOString()} | Run ID: ${report.summary.testRunId}` }] });
           fs.writeFileSync('./test-results/slack-payload.json', JSON.stringify({ blocks }, null, 2));
           
           // ── Set outputs ──
@@ -368,7 +406,10 @@ jobs:
             fs.appendFileSync(outputFile, `has_low_coverage=${lowCoverage.length > 0}\n`);
           }
           
-          console.log(`\n✅ Report generated — Failures: ${report.summary.failing}, Low coverage: ${lowCoverage.length}`);
+          console.log(`\n✅ Report generated`);
+          console.log(`   Failures: ${report.summary.failing}`);
+          console.log(`   Low coverage: ${lowCoverage.length}`);
+          console.log(`   Org coverage: ${report.summary.orgWideCoverage}`);
           EOF
 
       - name: Upload Test Results
@@ -456,6 +497,8 @@ jobs:
               <tr><td>Passing</td><td>${reportJson.summary.passing}</td></tr>
               <tr><td>Failing</td><td>${reportJson.summary.failing}</td></tr>
               <tr><td>Pass Rate</td><td>${reportJson.summary.passRate}</td></tr>
+              <tr><td>Org Coverage</td><td>${reportJson.summary.orgWideCoverage}</td></tr>
+              <tr><td>Test Run Coverage</td><td>${reportJson.summary.testRunCoverage}</td></tr>
               <tr><td>Low Coverage Classes</td><td>${reportJson.summary.lowCoverageCount}</td></tr>
             </table>
           `;
