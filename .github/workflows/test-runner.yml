@@ -1,10 +1,12 @@
 # ============================================================================
-# Scheduled Salesforce Test Runner (FIXED)
+# Scheduled Salesforce Test Runner (Email + Git Report)
 # ============================================================================
 # Runs Apex tests on a schedule and generates comprehensive reports including:
 # - Test pass/fail summary
 # - Coverage analysis (flags classes below threshold)
 # - Last committer attribution for failing/low-coverage classes
+# - Email notification on completion
+# - Committed test reports to dedicated reports directory
 # ============================================================================
 
 name: Scheduled Salesforce Test Runner
@@ -33,13 +35,13 @@ on:
         description: 'Coverage threshold percentage'
         required: false
         default: '95'
-      notify_slack:
-        description: 'Send Slack notification'
+      send_email:
+        description: 'Send email notification'
         required: false
         default: true
         type: boolean
-      upload_confluence:
-        description: 'Upload report to Confluence'
+      commit_report:
+        description: 'Commit report to repository'
         required: false
         default: true
         type: boolean
@@ -47,6 +49,7 @@ on:
 env:
   SF_ORG_ALIAS: 'TestSandbox'
   COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold || '95' }}
+  REPORTS_DIR: 'test-reports'
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
@@ -60,6 +63,12 @@ jobs:
     outputs:
       has_failures: ${{ steps.analyze.outputs.has_failures }}
       has_low_coverage: ${{ steps.analyze.outputs.has_low_coverage }}
+      report_date: ${{ steps.analyze.outputs.report_date }}
+      report_time: ${{ steps.analyze.outputs.report_time }}
+      summary_passing: ${{ steps.analyze.outputs.summary_passing }}
+      summary_failing: ${{ steps.analyze.outputs.summary_failing }}
+      summary_total: ${{ steps.analyze.outputs.summary_total }}
+      summary_pass_rate: ${{ steps.analyze.outputs.summary_pass_rate }}
     
     steps:
       - name: Checkout Repository
@@ -88,7 +97,7 @@ jobs:
         run: sf org display --target-org ${{ env.SF_ORG_ALIAS }}
 
       # ────────────────────────────────────────────────────────────────────
-      # Run Apex Tests (Simplified)
+      # Run Apex Tests
       # ────────────────────────────────────────────────────────────────────
       - name: Run Apex Tests
         id: run-tests
@@ -124,9 +133,6 @@ jobs:
           fi
           
           # Execute tests
-          # Exit code 100 = tests ran but some failed (expected)
-          # Exit code 0 = all tests passed
-          # Other codes = execution error
           echo "::group::Test Execution Output"
           sf apex run test "${ARGS[@]}" || TEST_EXIT=$?
           echo "::endgroup::"
@@ -134,11 +140,10 @@ jobs:
           TEST_EXIT=${TEST_EXIT:-0}
           echo "CLI exit code: $TEST_EXIT"
           
-          # FIX 1: Find ONLY the main test result file (not coverage files)
-          # The main file format is: test-result-<ID>.json (no suffix)
-          # Coverage files have suffixes: test-result-<ID>-codecoverage.json
-          # There's also a standalone: test-result-codecoverage.json
-          RESULT_FILE=$(find ./test-results -name "test-result-*.json" -type f ! -name "*-codecoverage.json" ! -name "*-junit.xml" | head -1)
+          # Find the main test result file (exclude coverage/junit files)
+          RESULT_FILE=$(find ./test-results -name "test-result-*.json" -type f \
+            ! -name "*-codecoverage.json" \
+            ! -name "*-junit.xml" | head -1)
           
           if [[ -z "$RESULT_FILE" ]]; then
             echo "::error::No test result file found. Execution may have failed."
@@ -193,16 +198,14 @@ jobs:
           // ── Load test results ──
           const rawData = JSON.parse(fs.readFileSync('./test-results/test-results.json', 'utf8'));
           
-          // FIX 2: Add validation to catch wrong file type
+          // Validation: Ensure we have test results, not coverage array
           if (Array.isArray(rawData)) {
             console.error('❌ ERROR: test-results.json is an array (coverage data), not test results!');
             console.error('   This means the wrong file was copied in the previous step.');
             process.exit(1);
           }
           
-          // Handle both SF CLI output structures:
-          // 1. Direct: { summary: {...}, tests: [...] }
-          // 2. Wrapped: { status: 0, result: { summary: {...}, tests: [...] } }
+          // Handle both SF CLI output structures
           const testData = rawData.result || rawData;
           const summary = testData.summary || {};
           const tests = testData.tests || [];
@@ -216,8 +219,7 @@ jobs:
           console.log('   Passing:', summary.passing);
           console.log('   Failing:', summary.failing);
           
-          // FIX 3: Use coverage data from SF CLI output instead of separate query
-          // The SF CLI includes coverage data in the test results or separate coverage file
+          // Load coverage data from SF CLI output
           let coverageData = [];
           
           // First try: Check if coverage is embedded in test results
@@ -230,7 +232,6 @@ jobs:
               const coverageFile = './test-results/test-result-codecoverage.json';
               if (fs.existsSync(coverageFile)) {
                 const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
-                // This file is an array of coverage objects
                 coverageData = Array.isArray(coverage) ? coverage : [];
                 console.log(`✅ Loaded coverage from ${coverageFile}: ${coverageData.length} classes`);
               }
@@ -303,6 +304,10 @@ jobs:
           lowCoverage.forEach(c => c.lastCommitter = getLastCommitter(c.className));
           
           // ── Build report ──
+          const now = new Date();
+          const reportDate = now.toISOString().split('T')[0];
+          const reportTime = now.toISOString();
+          
           const report = {
             summary: {
               outcome: summary.outcome || 'Unknown',
@@ -313,7 +318,8 @@ jobs:
               testRunId: summary.testRunId || 'N/A',
               orgWideCoverage: summary.orgWideCoverage || 'N/A',
               testRunCoverage: summary.testRunCoverage || 'N/A',
-              timestamp: new Date().toISOString(),
+              timestamp: reportTime,
+              reportDate: reportDate,
               coverageThreshold: threshold,
               lowCoverageCount: lowCoverage.length
             },
@@ -323,99 +329,187 @@ jobs:
           
           fs.writeFileSync('./test-results/report.json', JSON.stringify(report, null, 2));
           
-          // ── Generate Markdown ──
+          // ── Generate Markdown Report ──
           const isHealthy = report.summary.failing === 0 && lowCoverage.length === 0;
-          let md = `# 🧪 Apex Test Report\n\n`;
-          md += `**Generated:** ${report.summary.timestamp}\n\n`;
+          let md = `# 🧪 Salesforce Apex Test Report\n\n`;
+          md += `**Generated:** ${report.summary.timestamp}\n`;
+          md += `**Test Run ID:** ${report.summary.testRunId}\n`;
+          md += `**Workflow Run:** [View Details](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})\n\n`;
+          md += `---\n\n`;
           md += `## ${isHealthy ? '✅' : '🔴'} Summary\n\n`;
           md += `| Metric | Value |\n|--------|-------|\n`;
-          md += `| Tests Run | ${report.summary.testsRan} |\n`;
-          md += `| Passing | ${report.summary.passing} |\n`;
-          md += `| Failing | ${report.summary.failing} |\n`;
-          md += `| Pass Rate | ${report.summary.passRate} |\n`;
-          md += `| Org-Wide Coverage | ${report.summary.orgWideCoverage} |\n`;
-          md += `| Test Run Coverage | ${report.summary.testRunCoverage} |\n`;
-          md += `| Classes Below ${threshold}% | ${lowCoverage.length} |\n\n`;
+          md += `| **Tests Run** | ${report.summary.testsRan} |\n`;
+          md += `| **Passing** | ✅ ${report.summary.passing} |\n`;
+          md += `| **Failing** | ${report.summary.failing > 0 ? '❌' : '✅'} ${report.summary.failing} |\n`;
+          md += `| **Pass Rate** | ${report.summary.passRate} |\n`;
+          md += `| **Outcome** | ${report.summary.outcome} |\n`;
+          md += `| **Org-Wide Coverage** | ${report.summary.orgWideCoverage} |\n`;
+          md += `| **Test Run Coverage** | ${report.summary.testRunCoverage} |\n`;
+          md += `| **Classes Below ${threshold}%** | ${lowCoverage.length > 0 ? '⚠️' : '✅'} ${lowCoverage.length} |\n\n`;
           
           if (report.failingClasses.length > 0) {
+            md += `---\n\n`;
             md += `## ❌ Failing Test Classes\n\n`;
             report.failingClasses.forEach(f => {
-              md += `### \`${f.className}\`\n`;
-              if (f.lastCommitter) md += `**Last Committer:** ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}\n\n`;
-              md += `**Failed Methods:**\n`;
+              md += `### \`${f.className}\`\n\n`;
+              if (f.lastCommitter) {
+                md += `**Last Modified By:** ${f.lastCommitter.name} (${f.lastCommitter.email})  \n`;
+                md += `**Date:** ${f.lastCommitter.date}\n\n`;
+              }
+              md += `**Failed Methods:**\n\n`;
               f.methods.forEach(m => {
-                md += `- \`${m.methodName}\`\n`;
-                if (m.message) md += `  - Error: ${m.message.substring(0, 150)}\n`;
+                md += `#### \`${m.methodName}\`\n\n`;
+                if (m.message) {
+                  md += `**Error Message:**\n\`\`\`\n${m.message}\n\`\`\`\n\n`;
+                }
                 if (m.stackTrace) {
-                  const firstLine = m.stackTrace.split('\n')[0];
-                  md += `  - Stack: ${firstLine.substring(0, 100)}\n`;
+                  md += `**Stack Trace:**\n\`\`\`\n${m.stackTrace}\n\`\`\`\n\n`;
                 }
               });
-              md += `\n`;
             });
           }
           
           if (lowCoverage.length > 0) {
+            md += `---\n\n`;
             md += `## 📉 Classes Below ${threshold}% Coverage\n\n`;
-            md += `| Class | Coverage | Lines Covered/Total | Last Committer |\n|-------|----------|---------------------|----------------|\n`;
+            md += `> **Warning:** ${lowCoverage.length} classes are below the ${threshold}% coverage threshold.\n\n`;
+            md += `| Class | Coverage | Lines Covered/Total | Last Modified By |\n`;
+            md += `|-------|----------|---------------------|------------------|\n`;
             lowCoverage.slice(0, 15).forEach(c => {
-              md += `| \`${c.className}\` | ${c.coveragePercentage.toFixed(1)}% | ${c.linesCovered}/${c.totalLines} | ${c.lastCommitter?.name || 'Unknown'} |\n`;
+              const coverageIcon = c.coveragePercentage < 50 ? '🔴' : c.coveragePercentage < threshold ? '⚠️' : '✅';
+              const committer = c.lastCommitter ? `${c.lastCommitter.name}` : 'Unknown';
+              md += `| \`${c.className}\` | ${coverageIcon} ${c.coveragePercentage.toFixed(1)}% | ${c.linesCovered}/${c.totalLines} | ${committer} |\n`;
             });
+            
+            if (lowCoverage.length > 15) {
+              md += `\n_... and ${lowCoverage.length - 15} more classes below threshold_\n`;
+            }
           }
+          
+          md += `\n---\n\n`;
+          md += `_Report generated automatically by Salesforce DevOps Pipeline_\n`;
           
           fs.writeFileSync('./test-results/report.md', md);
           
-          // ── Generate Slack payload ──
-          const blocks = [
-            { type: 'header', text: { type: 'plain_text', text: isHealthy ? '✅ Apex Tests Passed' : '🔴 Apex Test Issues Detected', emoji: true } },
-            { type: 'section', fields: [
-              { type: 'mrkdwn', text: `*Tests Run:*\n${report.summary.testsRan}` },
-              { type: 'mrkdwn', text: `*Pass Rate:*\n${report.summary.passRate}` },
-              { type: 'mrkdwn', text: `*Failures:*\n${report.summary.failing}` },
-              { type: 'mrkdwn', text: `*Low Coverage:*\n${lowCoverage.length} classes` }
-            ]},
-            { type: 'section', fields: [
-              { type: 'mrkdwn', text: `*Org Coverage:*\n${report.summary.orgWideCoverage}` },
-              { type: 'mrkdwn', text: `*Run Coverage:*\n${report.summary.testRunCoverage}` }
-            ]},
-            { type: 'divider' }
-          ];
+          // ── Generate Email-friendly HTML Report ──
+          const statusColor = isHealthy ? '#28a745' : '#dc3545';
+          const statusEmoji = isHealthy ? '✅' : '🔴';
+          
+          let html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: ${statusColor}; border-bottom: 3px solid ${statusColor}; padding-bottom: 10px; }
+    h2 { color: #0366d6; margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background-color: #f6f8fa; font-weight: 600; }
+    .success { color: #28a745; }
+    .failure { color: #dc3545; }
+    .warning { color: #ffc107; }
+    .metric-box { background: #f6f8fa; padding: 15px; border-radius: 6px; margin: 10px 0; }
+    .code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    .error-box { background: #fff5f5; border-left: 4px solid #dc3545; padding: 15px; margin: 10px 0; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>${statusEmoji} Salesforce Apex Test Report</h1>
+  
+  <div class="metric-box">
+    <p><strong>Generated:</strong> ${report.summary.timestamp}</p>
+    <p><strong>Test Run ID:</strong> ${report.summary.testRunId}</p>
+    <p><strong>Workflow:</strong> <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View on GitHub</a></p>
+  </div>
+  
+  <h2>Summary</h2>
+  <table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Tests Run</td><td><strong>${report.summary.testsRan}</strong></td></tr>
+    <tr><td>Passing</td><td class="success"><strong>${report.summary.passing}</strong></td></tr>
+    <tr><td>Failing</td><td class="${report.summary.failing > 0 ? 'failure' : 'success'}"><strong>${report.summary.failing}</strong></td></tr>
+    <tr><td>Pass Rate</td><td><strong>${report.summary.passRate}</strong></td></tr>
+    <tr><td>Outcome</td><td class="${isHealthy ? 'success' : 'failure'}"><strong>${report.summary.outcome}</strong></td></tr>
+    <tr><td>Org Coverage</td><td><strong>${report.summary.orgWideCoverage}</strong></td></tr>
+    <tr><td>Test Run Coverage</td><td><strong>${report.summary.testRunCoverage}</strong></td></tr>
+    <tr><td>Low Coverage Classes</td><td class="${lowCoverage.length > 0 ? 'warning' : 'success'}"><strong>${lowCoverage.length}</strong></td></tr>
+  </table>
+`;
           
           if (report.failingClasses.length > 0) {
-            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*❌ Failing Classes (${report.failingClasses.length})*` } });
-            report.failingClasses.slice(0, 5).forEach(f => {
-              const committer = f.lastCommitter ? ` (${f.lastCommitter.name})` : '';
-              const methods = f.methods.map(m => m.methodName).slice(0, 3).join(', ');
-              blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `• \`${f.className}\`${committer}\n  _Methods:_ ${methods}` } });
+            html += `<h2 class="failure">❌ Failing Test Classes</h2>`;
+            report.failingClasses.forEach(f => {
+              html += `<div class="error-box">`;
+              html += `<h3><span class="code">${f.className}</span></h3>`;
+              if (f.lastCommitter) {
+                html += `<p><strong>Last Modified:</strong> ${f.lastCommitter.name} (${f.lastCommitter.email}) on ${f.lastCommitter.date}</p>`;
+              }
+              html += `<p><strong>Failed Methods:</strong></p><ul>`;
+              f.methods.forEach(m => {
+                html += `<li><span class="code">${m.methodName}</span>`;
+                if (m.message) html += `<br><em>${m.message.substring(0, 200)}</em>`;
+                html += `</li>`;
+              });
+              html += `</ul></div>`;
             });
-            blocks.push({ type: 'divider' });
           }
           
           if (lowCoverage.length > 0) {
-            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*📉 Low Coverage (${lowCoverage.length} below ${threshold}%)*` } });
-            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lowCoverage.slice(0, 5).map(c => `• \`${c.className}\` - ${c.coveragePercentage.toFixed(1)}%`).join('\n') } });
+            html += `<h2 class="warning">📉 Classes Below ${threshold}% Coverage</h2>`;
+            html += `<p><strong>Warning:</strong> ${lowCoverage.length} classes are below the ${threshold}% coverage threshold.</p>`;
+            html += `<table>`;
+            html += `<tr><th>Class</th><th>Coverage</th><th>Lines</th><th>Last Modified By</th></tr>`;
+            lowCoverage.slice(0, 10).forEach(c => {
+              const coverageClass = c.coveragePercentage < 50 ? 'failure' : 'warning';
+              html += `<tr>`;
+              html += `<td><span class="code">${c.className}</span></td>`;
+              html += `<td class="${coverageClass}"><strong>${c.coveragePercentage.toFixed(1)}%</strong></td>`;
+              html += `<td>${c.linesCovered}/${c.totalLines}</td>`;
+              html += `<td>${c.lastCommitter?.name || 'Unknown'}</td>`;
+              html += `</tr>`;
+            });
+            html += `</table>`;
+            if (lowCoverage.length > 10) {
+              html += `<p><em>... and ${lowCoverage.length - 10} more classes below threshold</em></p>`;
+            }
           }
           
-          blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 ${new Date().toISOString()} | Run ID: ${report.summary.testRunId}` }] });
-          fs.writeFileSync('./test-results/slack-payload.json', JSON.stringify({ blocks }, null, 2));
+          html += `
+  <div class="footer">
+    <p>This report was generated automatically by the Salesforce DevOps Pipeline.</p>
+    <p>For full details, see the <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">GitHub Actions workflow run</a>.</p>
+  </div>
+</body>
+</html>`;
           
-          // ── Set outputs ──
+          fs.writeFileSync('./test-results/report.html', html);
+          
+          // ── Set outputs for email and downstream jobs ──
           const outputFile = process.env.GITHUB_OUTPUT;
           if (outputFile) {
             fs.appendFileSync(outputFile, `has_failures=${report.summary.failing > 0}\n`);
             fs.appendFileSync(outputFile, `has_low_coverage=${lowCoverage.length > 0}\n`);
+            fs.appendFileSync(outputFile, `report_date=${reportDate}\n`);
+            fs.appendFileSync(outputFile, `report_time=${reportTime}\n`);
+            fs.appendFileSync(outputFile, `summary_passing=${report.summary.passing}\n`);
+            fs.appendFileSync(outputFile, `summary_failing=${report.summary.failing}\n`);
+            fs.appendFileSync(outputFile, `summary_total=${report.summary.testsRan}\n`);
+            fs.appendFileSync(outputFile, `summary_pass_rate=${report.summary.passRate}\n`);
           }
           
           console.log(`\n✅ Report generated`);
           console.log(`   Failures: ${report.summary.failing}`);
           console.log(`   Low coverage: ${lowCoverage.length}`);
           console.log(`   Org coverage: ${report.summary.orgWideCoverage}`);
+          console.log(`   Files: report.json, report.md, report.html`);
           EOF
 
-      - name: Upload Test Results
+      - name: Upload Test Results Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ steps.analyze.outputs.report_date }}
           path: ./test-results/
           retention-days: 30
 
@@ -425,126 +519,198 @@ jobs:
           if [ -f ./test-results/report.md ]; then
             cat ./test-results/report.md >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "📎 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job: Send Slack Notification
+  # Job: Send Email Notification
   # ──────────────────────────────────────────────────────────────────────────
-  notify-slack:
-    name: Slack Notification
+  send-email:
+    name: Email Notification
     runs-on: ubuntu-latest
     needs: run-tests
-    if: ${{ always() && (inputs.notify_slack != false) }}
+    if: ${{ always() && (inputs.send_email != false) }}
     
     steps:
       - name: Download Report
         uses: actions/download-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ needs.run-tests.outputs.report_date }}
           path: ./test-results/
 
-      - name: Send Slack Notification
-        uses: slackapi/slack-github-action@v1.26.0
+      - name: Send Email Report
+        uses: dawidd6/action-send-mail@v3
         with:
-          payload-file-path: './test-results/slack-payload.json'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT || '587' }}
+          secure: ${{ secrets.SMTP_SECURE || 'true' }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: |
+            ${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }} Salesforce Test Report - ${{ needs.run-tests.outputs.report_date }}
+          to: ${{ secrets.TEST_REPORT_EMAIL_RECIPIENTS }}
+          from: ${{ secrets.SMTP_FROM_EMAIL || secrets.SMTP_USERNAME }}
+          html_body: file://./test-results/report.html
+          attachments: ./test-results/report.json,./test-results/report.md
+          priority: ${{ needs.run-tests.outputs.summary_failing > 0 && 'high' || 'normal' }}
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job: Upload Report to Confluence
+  # Job: Commit Report to Repository
   # ──────────────────────────────────────────────────────────────────────────
-  upload-confluence:
-    name: Upload to Confluence
+  commit-report:
+    name: Commit Test Report
     runs-on: ubuntu-latest
     needs: run-tests
-    if: ${{ always() && (inputs.upload_confluence != false) }}
+    if: ${{ always() && (inputs.commit_report != false) }}
+    
+    permissions:
+      contents: write
     
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download Report
         uses: actions/download-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ needs.run-tests.outputs.report_date }}
           path: ./test-results/
 
-      - name: Upload Report to Confluence
+      - name: Organize Reports Directory
         run: |
-          node << 'EOF'
-          const fs = require('fs');
-          const https = require('https');
+          # Create reports directory structure: test-reports/YYYY/MM/
+          YEAR=$(date +%Y)
+          MONTH=$(date +%m)
+          REPORT_DIR="${{ env.REPORTS_DIR }}/${YEAR}/${MONTH}"
           
-          const { CONFLUENCE_URL, CONFLUENCE_USERNAME, CONFLUENCE_API_TOKEN, CONFLUENCE_SPACE_KEY, CONFLUENCE_PARENT_PAGE_ID } = process.env;
+          mkdir -p "${REPORT_DIR}"
           
-          if (!CONFLUENCE_URL || !CONFLUENCE_USERNAME || !CONFLUENCE_API_TOKEN) {
-            console.log('⚠️ Confluence credentials not configured. Skipping.');
-            process.exit(0);
-          }
+          # Create timestamped report directory
+          TIMESTAMP="${{ needs.run-tests.outputs.report_date }}"
+          REPORT_SUBDIR="${REPORT_DIR}/${TIMESTAMP}"
+          mkdir -p "${REPORT_SUBDIR}"
           
-          const reportJson = JSON.parse(fs.readFileSync('./test-results/report.json', 'utf8'));
-          const date = new Date().toISOString().split('T')[0];
-          const status = (reportJson.summary.failing > 0 || reportJson.summary.lowCoverageCount > 0) ? '❌' : '✅';
+          # Copy reports
+          cp ./test-results/report.json "${REPORT_SUBDIR}/"
+          cp ./test-results/report.md "${REPORT_SUBDIR}/"
+          cp ./test-results/report.html "${REPORT_SUBDIR}/"
           
-          const storageFormat = `
-            <h1>${status} Salesforce Test Report - ${date}</h1>
-            <p><strong>Generated:</strong> ${reportJson.summary.timestamp}</p>
-            <p><a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View on GitHub</a></p>
-            <h2>Summary</h2>
-            <table>
-              <tr><th>Metric</th><th>Value</th></tr>
-              <tr><td>Tests Run</td><td>${reportJson.summary.testsRan}</td></tr>
-              <tr><td>Passing</td><td>${reportJson.summary.passing}</td></tr>
-              <tr><td>Failing</td><td>${reportJson.summary.failing}</td></tr>
-              <tr><td>Pass Rate</td><td>${reportJson.summary.passRate}</td></tr>
-              <tr><td>Org Coverage</td><td>${reportJson.summary.orgWideCoverage}</td></tr>
-              <tr><td>Test Run Coverage</td><td>${reportJson.summary.testRunCoverage}</td></tr>
-              <tr><td>Low Coverage Classes</td><td>${reportJson.summary.lowCoverageCount}</td></tr>
-            </table>
-          `;
+          # Create or update index in the month directory
+          INDEX_FILE="${REPORT_DIR}/README.md"
           
-          const payload = {
-            type: 'page',
-            title: `${status} Salesforce Test Report - ${date}`,
-            space: { key: CONFLUENCE_SPACE_KEY || 'TEST' },
-            body: { storage: { value: storageFormat, representation: 'storage' } },
-            ...(CONFLUENCE_PARENT_PAGE_ID && { ancestors: [{ id: CONFLUENCE_PARENT_PAGE_ID }] })
-          };
+          if [ ! -f "${INDEX_FILE}" ]; then
+            cat > "${INDEX_FILE}" << 'INDEXEOF'
+# Test Reports - $MONTH/$YEAR
+
+## Reports
+
+INDEXEOF
+          fi
           
-          const url = new URL(`${CONFLUENCE_URL}/rest/api/content`);
-          const req = https.request({
-            hostname: url.hostname,
-            port: url.port || 443,
-            path: url.pathname,
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${Buffer.from(`${CONFLUENCE_USERNAME}:${CONFLUENCE_API_TOKEN}`).toString('base64')}`,
-              'Content-Type': 'application/json'
-            }
-          }, res => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-              if (res.statusCode >= 200 && res.statusCode < 300) {
-                const response = JSON.parse(data);
-                console.log(`✅ Uploaded to Confluence: ${CONFLUENCE_URL}${response._links.webui}`);
-              } else {
-                console.error(`❌ Confluence upload failed: ${res.statusCode} - ${data}`);
-                process.exit(1);
-              }
-            });
-          });
+          # Add entry to index (prepend to keep newest on top)
+          STATUS_ICON="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
+          REPORT_LINE="- ${STATUS_ICON} [${TIMESTAMP}](./${TIMESTAMP}/report.md) - Tests: ${{ needs.run-tests.outputs.summary_total }}, Passing: ${{ needs.run-tests.outputs.summary_passing }}, Failing: ${{ needs.run-tests.outputs.summary_failing }}, Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}"
           
-          req.on('error', e => { console.error(`❌ Error: ${e.message}`); process.exit(1); });
-          req.write(JSON.stringify(payload));
-          req.end();
-          EOF
-        env:
-          CONFLUENCE_URL: ${{ secrets.CONFLUENCE_URL }}
-          CONFLUENCE_USERNAME: ${{ secrets.CONFLUENCE_USERNAME }}
-          CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
-          CONFLUENCE_SPACE_KEY: ${{ secrets.CONFLUENCE_SPACE_KEY }}
-          CONFLUENCE_PARENT_PAGE_ID: ${{ secrets.CONFLUENCE_PARENT_PAGE_ID }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
+          # Insert after header (use a temporary file for portability)
+          awk -v line="${REPORT_LINE}" '/## Reports/ {print; print line; next} {print}' "${INDEX_FILE}" > "${INDEX_FILE}.tmp" && mv "${INDEX_FILE}.tmp" "${INDEX_FILE}"
+          
+          echo "📁 Report organized in: ${REPORT_SUBDIR}"
+          echo "REPORT_DIR=${REPORT_DIR}" >> $GITHUB_ENV
+          echo "REPORT_SUBDIR=${REPORT_SUBDIR}" >> $GITHUB_ENV
+
+      - name: Create Root Index
+        run: |
+          # Create main index at test-reports/README.md
+          ROOT_INDEX="${{ env.REPORTS_DIR }}/README.md"
+          
+          cat > "${ROOT_INDEX}" << 'EOF'
+# Salesforce Test Reports
+
+This directory contains automated test execution reports organized by year and month.
+
+## Latest Reports
+
+EOF
+          
+          # Find the 10 most recent reports across all directories
+          # Use a temporary file to store timestamps and paths
+          TEMP_FILE=$(mktemp)
+          find "${{ env.REPORTS_DIR }}" -name "report.md" -type f | while read filepath; do
+            # Get modification time (portable method)
+            if command -v stat >/dev/null 2>&1; then
+              if stat -f "%m" "$filepath" 2>/dev/null >/dev/null; then
+                # macOS stat
+                MTIME=$(stat -f "%m" "$filepath" 2>/dev/null)
+              else
+                # Linux stat
+                MTIME=$(stat -c "%Y" "$filepath" 2>/dev/null)
+              fi
+              [ -n "$MTIME" ] && echo "$MTIME|$filepath" >> "$TEMP_FILE"
+            fi
+          done
+          
+          # Sort by modification time (newest first) and process top 10
+          sort -rn "$TEMP_FILE" 2>/dev/null | head -10 | while IFS='|' read -r timestamp filepath; do
+            # Extract date from path (YYYY-MM-DD format)
+            REPORT_DATE=$(echo "$filepath" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+            
+            # Calculate relative path (portable method without realpath)
+            REPORTS_BASE="${{ env.REPORTS_DIR }}"
+            REL_PATH="${filepath#$REPORTS_BASE/}"
+            # Remove leading slash if present
+            REL_PATH="${REL_PATH#/}"
+            
+            if [ -n "$REPORT_DATE" ] && [ -n "$REL_PATH" ]; then
+              echo "- [$REPORT_DATE](./${REL_PATH})" >> "${ROOT_INDEX}"
+            fi
+          done
+          rm -f "$TEMP_FILE"
+          
+          cat >> "${ROOT_INDEX}" << 'EOF'
+
+## Directory Structure
+
+Reports are organized by:
+- `YYYY/MM/YYYY-MM-DD/` - Daily test reports
+- Each report includes: `report.json`, `report.md`, `report.html`
+
+## Viewing Reports
+
+- **Markdown:** View `report.md` directly in GitHub
+- **JSON:** Download `report.json` for programmatic access
+- **HTML:** Download and open `report.html` in a browser
+
+---
+
+_Reports are automatically generated by the Salesforce Test Runner workflow._
+EOF
+
+          echo "📄 Root index created at: ${ROOT_INDEX}"
+
+      - name: Commit and Push Reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add ${{ env.REPORTS_DIR }}/
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit"
+            exit 0
+          fi
+          
+          STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴 FAILED' || '✅ PASSED' }}"
+          
+          # Build multiline commit message using a here-document
+          git commit -m "test: Add test report for ${{ needs.run-tests.outputs.report_date }} - ${STATUS}" \
+            -m "Tests: ${{ needs.run-tests.outputs.summary_total }}" \
+            -m "Passing: ${{ needs.run-tests.outputs.summary_passing }}" \
+            -m "Failing: ${{ needs.run-tests.outputs.summary_failing }}" \
+            -m "Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}" \
+            -m "" \
+            -m "Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git push
+          
+          echo "✅ Test report committed and pushed to repository"
