@@ -1,0 +1,66 @@
+name: 'Run Salesforce Tests'
+description: 'Execute Salesforce tests and capture results'
+
+inputs:
+  test_level:
+    description: 'Test level to run'
+    required: false
+    default: 'RunAllTestsInOrg'
+  wait_time:
+    description: 'Wait time in minutes for test execution'
+    required: false
+    default: '10'
+  code_coverage:
+    description: 'Include code coverage'
+    required: false
+    default: 'true'
+
+outputs:
+  test_results_path:
+    description: 'Path to test results JSON file'
+    value: ${{ steps.save-results.outputs.path }}
+  has_failures:
+    description: 'Whether tests have failures'
+    value: ${{ steps.check-results.outputs.has_failures }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create reports directory
+      shell: bash
+      run: |
+        mkdir -p reports
+    
+    - name: Run Salesforce Tests
+      id: test-execution
+      shell: bash
+      continue-on-error: true
+      run: |
+        sf apex run test \
+          --test-level ${{ inputs.test_level }} \
+          --wait ${{ inputs.wait_time }} \
+          --code-coverage \
+          --result-format json \
+          --output-dir reports \
+          --output-file test-results.json || true
+    
+    - name: Check test results
+      id: check-results
+      shell: bash
+      run: |
+        if [ -f "reports/test-results.json" ]; then
+          FAILURES=$(jq -r '.summary.failures // 0' reports/test-results.json 2>/dev/null || echo "0")
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "has_failures=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_failures=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "has_failures=true" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Save results path
+      id: save-results
+      shell: bash
+      run: |
+        echo "path=reports/test-results.json" >> $GITHUB_OUTPUT

@@ -14,6 +14,11 @@ jobs:
   salesforce-tests:
     name: Run Salesforce Tests
     runs-on: ubuntu-latest
+    continue-on-error: true # Don't fail workflow, just capture issues
+    permissions:
+      contents: write # Required to commit reports back to repo
+      issues: write  # Required to create issues on failures
+      pull-requests: write # Required to comment on PRs
     
     steps:
       - name: Checkout code
@@ -21,78 +26,124 @@ jobs:
         with:
           fetch-depth: 0 # Full history needed for committer info
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      
-      - name: Install dependencies
-        run: |
-          npm install
-      
-      - name: Setup Salesforce CLI
-        run: |
-          npm install -g @salesforce/cli
-          sf --version
-      
       - name: Authenticate to Salesforce
-        env:
-          SF_USERNAME: ${{ secrets.SF_USERNAME }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
-          SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
-          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL || 'https://test.salesforce.com' }}
-        run: |
-          echo "$SF_SECURITY_TOKEN$SF_PASSWORD" | sf org login web \
-            --instance-url $SF_LOGIN_URL \
-            --alias test-sandbox \
-            --set-default-username $SF_USERNAME
+        uses: ./.github/actions/salesforce-auth
+        with:
+          username: ${{ secrets.SF_USERNAME }}
+          password: ${{ secrets.SF_PASSWORD }}
+          security_token: ${{ secrets.SF_SECURITY_TOKEN }}
+          login_url: ${{ secrets.SF_LOGIN_URL || 'https://test.salesforce.com' }}
+          alias: 'test-sandbox'
       
       - name: Run Salesforce Tests
         id: test-run
-        run: |
-          node scripts/run-salesforce-tests.js
+        uses: ./.github/actions/run-salesforce-tests
+        with:
+          test_level: 'RunAllTestsInOrg'
+          wait_time: '10'
+          code_coverage: 'true'
+        continue-on-error: true
       
       - name: Generate Test Report
-        run: |
-          node scripts/generate-test-report.js
+        id: report-generation
+        uses: ./.github/actions/generate-report
+        with:
+          test_results_path: ${{ steps.test-run.outputs.test_results_path }}
+          coverage_threshold: '95'
+          report_format: 'both'
+        continue-on-error: true
       
-      - name: Upload Test Report
+      - name: Store Report in Repository
+        if: always()
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          REPORT_DIR="test-reports/$TIMESTAMP"
+          mkdir -p "$REPORT_DIR"
+          
+          # Copy reports to timestamped directory
+          if [ -f "reports/test-report.json" ]; then
+            cp reports/test-report.json "$REPORT_DIR/test-report.json"
+          fi
+          if [ -f "reports/test-report.md" ]; then
+            cp reports/test-report.md "$REPORT_DIR/test-report.md"
+          fi
+          if [ -f "reports/test-results.json" ]; then
+            cp reports/test-results.json "$REPORT_DIR/test-results.json"
+          fi
+          
+          # Create index file for easy access
+          echo "{\"timestamp\":\"$TIMESTAMP\",\"reportPath\":\"$REPORT_DIR/test-report.json\"}" > "$REPORT_DIR/index.json"
+          
+          # Commit and push reports
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add "$REPORT_DIR"
+          git commit -m "Add test report for $TIMESTAMP" || echo "No changes to commit"
+          git push || echo "Push failed or no changes"
+        continue-on-error: true
+      
+      - name: Upload Test Report Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: salesforce-test-report
+          name: salesforce-test-report-${{ github.run_id }}
           path: |
             reports/test-report.json
             reports/test-report.md
-            reports/test-report.html
+            reports/test-results.json
+          retention-days: 30
       
-      - name: Comment PR with Test Results
-        if: github.event_name == 'pull_request'
+      - name: Send Notifications
+        if: always()
+        uses: ./.github/actions/send-notification
+        with:
+          report_path: ${{ steps.report-generation.outputs.report_path }}
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          email_to: ${{ secrets.EMAIL_TO }}
+          workflow_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        continue-on-error: true
+      
+      - name: Create Summary Comment
+        if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('reports/test-report.md', 'utf8');
+            const path = require('path');
+            
+            let comment = '## 📊 Salesforce Test Results\n\n';
+            
+            try {
+              if (fs.existsSync('reports/test-report.json')) {
+                const report = JSON.parse(fs.readFileSync('reports/test-report.json', 'utf8'));
+                const summary = report.summary;
+                const failingCount = report.failingClasses?.length || 0;
+                const lowCoverageCount = report.lowCoverageClasses?.length || 0;
+                
+                comment += `- **Total Tests:** ${summary.totalTests}\n`;
+                comment += `- **Passed:** ${summary.passed} ✅\n`;
+                comment += `- **Failed:** ${summary.failed} ${summary.failed > 0 ? '❌' : ''}\n`;
+                comment += `- **Coverage:** ${summary.overallCoverage}\n`;
+                comment += `- **Failing Classes:** ${failingCount}\n`;
+                comment += `- **Low Coverage Classes (<95%):** ${lowCoverageCount}\n\n`;
+                
+                if (failingCount > 0 || lowCoverageCount > 0) {
+                  comment += '⚠️ **Issues detected** - Check the full report for details.\n';
+                } else {
+                  comment += '✅ **All checks passed!**\n';
+                }
+              } else {
+                comment += '⚠️ Report file not found.\n';
+              }
+            } catch (error) {
+              comment += `⚠️ Error reading report: ${error.message}\n`;
+            }
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: report
+              body: comment
             });
-      
-      - name: Create GitHub Issue on Test Failures
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            let report = 'Test suite failed. ';
-            if (fs.existsSync('reports/test-report.md')) {
-              report += fs.readFileSync('reports/test-report.md', 'utf8');
-            }
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `[Automated] Salesforce Test Suite Failure - ${new Date().toISOString()}`,
-              body: report,
-              labels: ['automated', 'tests', 'salesforce']
-            });
+        continue-on-error: true

@@ -1,0 +1,182 @@
+name: 'Send Notification'
+description: 'Send test results notification to Slack, MS Teams, or Email'
+
+inputs:
+  report_path:
+    description: 'Path to test report JSON file'
+    required: true
+  slack_webhook_url:
+    description: 'Slack webhook URL'
+    required: false
+  teams_webhook_url:
+    description: 'MS Teams webhook URL'
+    required: false
+  email_to:
+    description: 'Email address to send notification to'
+    required: false
+  workflow_run_url:
+    description: 'GitHub workflow run URL'
+    required: false
+    default: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Send Slack Notification
+      if: inputs.slack_webhook_url != ''
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook_url }}
+      run: |
+        REPORT=$(cat "${{ inputs.report_path }}")
+        
+        SUMMARY=$(echo "$REPORT" | jq -r '.summary')
+        FAILING_COUNT=$(echo "$REPORT" | jq -r '.failingClasses | length')
+        LOW_COVERAGE_COUNT=$(echo "$REPORT" | jq -r '.lowCoverageClasses | length')
+        
+        TOTAL_TESTS=$(echo "$SUMMARY" | jq -r '.totalTests')
+        PASSED=$(echo "$SUMMARY" | jq -r '.passed')
+        FAILED=$(echo "$SUMMARY" | jq -r '.failed')
+        COVERAGE=$(echo "$SUMMARY" | jq -r '.overallCoverage')
+        
+        # Determine color based on results
+        if [ "$FAILED" -gt 0 ] || [ "$LOW_COVERAGE_COUNT" -gt 0 ]; then
+          COLOR="danger"
+        else
+          COLOR="good"
+        fi
+        
+        # Build Slack message
+        SLACK_PAYLOAD=$(jq -n \
+          --arg color "$COLOR" \
+          --arg totalTests "$TOTAL_TESTS" \
+          --arg passed "$PASSED" \
+          --arg failed "$FAILED" \
+          --arg coverage "$COVERAGE" \
+          --arg failingCount "$FAILING_COUNT" \
+          --arg lowCoverageCount "$LOW_COVERAGE_COUNT" \
+          --arg runUrl "${{ inputs.workflow_run_url }}" \
+          --argjson report "$REPORT" \
+          '{
+            attachments: [{
+              color: $color,
+              title: "Salesforce Test Suite Results",
+              title_link: $runUrl,
+              fields: [
+                { title: "Total Tests", value: $totalTests, short: true },
+                { title: "Passed", value: $passed, short: true },
+                { title: "Failed", value: $failed, short: true },
+                { title: "Coverage", value: $coverage, short: true },
+                { title: "Failing Classes", value: ($failingCount | tostring), short: true },
+                { title: "Low Coverage Classes", value: ($lowCoverageCount | tostring), short: true }
+              ],
+              footer: "GitHub Actions",
+              ts: (now | tostring)
+            }]
+          }')
+        
+        curl -X POST -H 'Content-type: application/json' \
+          --data "$SLACK_PAYLOAD" \
+          "$SLACK_WEBHOOK_URL" || true
+    
+    - name: Send MS Teams Notification
+      if: inputs.teams_webhook_url != ''
+      shell: bash
+      env:
+        TEAMS_WEBHOOK_URL: ${{ inputs.teams_webhook_url }}
+      run: |
+        REPORT=$(cat "${{ inputs.report_path }}")
+        
+        SUMMARY=$(echo "$REPORT" | jq -r '.summary')
+        FAILING_COUNT=$(echo "$REPORT" | jq -r '.failingClasses | length')
+        LOW_COVERAGE_COUNT=$(echo "$REPORT" | jq -r '.lowCoverageClasses | length')
+        
+        TOTAL_TESTS=$(echo "$SUMMARY" | jq -r '.totalTests')
+        PASSED=$(echo "$SUMMARY" | jq -r '.passed')
+        FAILED=$(echo "$SUMMARY" | jq -r '.failed')
+        COVERAGE=$(echo "$SUMMARY" | jq -r '.overallCoverage')
+        
+        # Determine theme color
+        if [ "$FAILED" -gt 0 ] || [ "$LOW_COVERAGE_COUNT" -gt 0 ]; then
+          THEME_COLOR="FF0000"
+        else
+          THEME_COLOR="00FF00"
+        fi
+        
+        # Build MS Teams message
+        TEAMS_PAYLOAD=$(jq -n \
+          --arg themeColor "$THEME_COLOR" \
+          --arg totalTests "$TOTAL_TESTS" \
+          --arg passed "$PASSED" \
+          --arg failed "$FAILED" \
+          --arg coverage "$COVERAGE" \
+          --arg failingCount "$FAILING_COUNT" \
+          --arg lowCoverageCount "$LOW_COVERAGE_COUNT" \
+          --arg runUrl "${{ inputs.workflow_run_url }}" \
+          '{
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "themeColor": $themeColor,
+            "summary": "Salesforce Test Suite Results",
+            "sections": [{
+              "activityTitle": "Salesforce Test Suite Results",
+              "activitySubtitle": "Test execution completed",
+              "facts": [
+                { "name": "Total Tests", "value": $totalTests },
+                { "name": "Passed", "value": $passed },
+                { "name": "Failed", "value": $failed },
+                { "name": "Coverage", "value": $coverage },
+                { "name": "Failing Classes", "value": $failingCount },
+                { "name": "Low Coverage Classes", "value": $lowCoverageCount }
+              ],
+              "markdown": true
+            }],
+            "potentialAction": [{
+              "@type": "OpenUri",
+              "name": "View Details",
+              "targets": [{ "os": "default", "uri": $runUrl }]
+            }]
+          }')
+        
+        curl -X POST -H 'Content-type: application/json' \
+          --data "$TEAMS_PAYLOAD" \
+          "$TEAMS_WEBHOOK_URL" || true
+    
+    - name: Send Email Notification
+      if: inputs.email_to != ''
+      shell: bash
+      env:
+        EMAIL_TO: ${{ inputs.email_to }}
+      run: |
+        REPORT=$(cat "${{ inputs.report_path }}")
+        
+        SUMMARY=$(echo "$REPORT" | jq -r '.summary')
+        FAILING_COUNT=$(echo "$REPORT" | jq -r '.failingClasses | length')
+        LOW_COVERAGE_COUNT=$(echo "$REPORT" | jq -r '.lowCoverageClasses | length')
+        
+        TOTAL_TESTS=$(echo "$SUMMARY" | jq -r '.totalTests')
+        PASSED=$(echo "$SUMMARY" | jq -r '.passed')
+        FAILED=$(echo "$SUMMARY" | jq -r '.failed')
+        COVERAGE=$(echo "$SUMMARY" | jq -r '.overallCoverage')
+        
+        SUBJECT="Salesforce Test Suite Results - $TOTAL_TESTS tests, $FAILED failed"
+        
+        BODY=$(cat <<EOF
+        Salesforce Test Suite Execution Results
+        
+        Summary:
+        - Total Tests: $TOTAL_TESTS
+        - Passed: $PASSED
+        - Failed: $FAILED
+        - Coverage: $COVERAGE
+        - Failing Classes: $FAILING_COUNT
+        - Low Coverage Classes: $LOW_COVERAGE_COUNT
+        
+        View full report: ${{ inputs.workflow_run_url }}
+        EOF
+        )
+        
+        # Use sendmail or mail command if available
+        echo "$BODY" | mail -s "$SUBJECT" "$EMAIL_TO" 2>/dev/null || \
+        echo "$BODY" | sendmail "$EMAIL_TO" 2>/dev/null || \
+        echo "Email notification skipped - mail service not configured"

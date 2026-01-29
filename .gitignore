@@ -5,3 +5,6 @@ reports/
 .env
 .sf/
 .sfdx/
+# Keep test-reports directory tracked but ignore temporary files
+test-reports/*.tmp
+test-reports/.gitkeep

@@ -1,0 +1,43 @@
+name: 'Salesforce Authentication'
+description: 'Authenticate to Salesforce org using web login'
+
+inputs:
+  username:
+    description: 'Salesforce username'
+    required: true
+  password:
+    description: 'Salesforce password'
+    required: true
+  security_token:
+    description: 'Salesforce security token'
+    required: true
+  login_url:
+    description: 'Salesforce login URL'
+    required: false
+    default: 'https://test.salesforce.com'
+  alias:
+    description: 'Alias for the authenticated org'
+    required: false
+    default: 'test-sandbox'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Salesforce CLI
+      shell: bash
+      run: |
+        npm install -g @salesforce/cli
+        sf --version
+    
+    - name: Authenticate to Salesforce
+      shell: bash
+      env:
+        SF_USERNAME: ${{ inputs.username }}
+        SF_PASSWORD: ${{ inputs.password }}
+        SF_SECURITY_TOKEN: ${{ inputs.security_token }}
+        SF_LOGIN_URL: ${{ inputs.login_url }}
+      run: |
+        echo "$SF_SECURITY_TOKEN$SF_PASSWORD" | sf org login web \
+          --instance-url $SF_LOGIN_URL \
+          --alias ${{ inputs.alias }} \
+          --set-default-username $SF_USERNAME
