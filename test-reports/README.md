@@ -4,6 +4,7 @@ This directory contains automated test execution reports organized by year and m
 
 ## Latest Reports
 
+- [2026-01-30](./2026/01/2026-01-30/report.md)
 - [2026-01-29](./2026/01/2026-01-29/report.md)
 
 ## Directory Structure
