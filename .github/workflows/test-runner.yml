@@ -20,7 +20,7 @@ on:
       test_level:
         description: 'Test Level'
         required: true
-        default: 'RunSpecifiedTests'
+        default: 'RunLocalTests'
         type: choice
         options:
           - RunSpecifiedTests
