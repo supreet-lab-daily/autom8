@@ -1,19 +1,116 @@
 {
   "summary": {
     "outcome": "Failed",
-    "testsRan": 27,
-    "passing": 26,
-    "failing": 1,
-    "passRate": "96%",
-    "testRunId": "707O2000029uCd2",
+    "testsRan": 1992,
+    "passing": 1958,
+    "failing": 34,
+    "passRate": "98%",
+    "testRunId": "707O2000029uEqT",
     "orgWideCoverage": "90%",
-    "testRunCoverage": "92%",
-    "timestamp": "2026-01-29T18:57:35.998Z",
+    "testRunCoverage": "93%",
+    "timestamp": "2026-01-29T19:34:48.147Z",
     "reportDate": "2026-01-29",
     "coverageThreshold": 95,
-    "lowCoverageCount": 9
+    "lowCoverageCount": 45
   },
   "failingClasses": [
+    {
+      "className": "AssignOwnerToSalesTargetLeadTest",
+      "methods": [
+        {
+          "methodName": "TestAccountActiveOwner",
+          "message": "System.AssertException: Assertion Failed: Account Owner is set to lead Owner: Expected: 005fK000001TKysQAG, Actual: 005O200000TiaecIAB",
+          "stackTrace": "Class.AssignOwnerToSalesTargetLeadTest.TestAccountActiveOwner: line 73, column 1"
+        },
+        {
+          "methodName": "TestAccountInActiveOwner",
+          "message": "System.AssertException: Assertion Failed: Account Owner manager is set to lead Owner: Expected: 005fK000001TKysQAG, Actual: 005O200000TiaebIAB",
+          "stackTrace": "Class.AssignOwnerToSalesTargetLeadTest.TestAccountInActiveOwner: line 97, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "SupportTeamMemberTriggerTest",
+      "methods": [
+        {
+          "methodName": "testAUSuccessLeadStatusChangeOnly",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBDFailureLeadOfDifferentTeam",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBDFailureNonLeadUnauthorizedDeletion",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBDFailureSelfDeletionPrevention",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBDSuccessAuthorizedDeletion",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBIFailureSelfLeadCreationRule2",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBIFailureUnauthorizedCreationRule1",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBUFailureSelfUpdatePrevention",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBUFailureUnauthorizedModification",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testBUSuccessAuthorizedModification",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testCatchDMLException",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testGroupAdderSuccessAddGroupMembership",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testGroupRemoverSuccessRemoveGroupMembership",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testSuccessRemoveGroupMembership",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        },
+        {
+          "methodName": "testSuccessUpdateExistingSettingAndDeleteSetting",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000005bIHIAY).: []",
+          "stackTrace": "Class.SupportTeamMemberTriggerTest.makeBaseData: line 155, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
     {
       "className": "ESMCustomMatrixEligibilityImplTest",
       "methods": [
@@ -24,9 +121,152 @@
         }
       ],
       "lastCommitter": null
+    },
+    {
+      "className": "PreventDuplicateDSRCreationTest",
+      "methods": [
+        {
+          "methodName": "preventCreationOfDuplicateDSRsTest1",
+          "message": "System.NoAccessException: No access to entity 'Brownfield_Opportunity__dlm'",
+          "stackTrace": "Class.PreventDuplicateDSRCreationTest.preventCreationOfDuplicateDSRsTest1: line 49, column 1"
+        },
+        {
+          "methodName": "preventCreationOfDuplicateDSRsTest2",
+          "message": "System.NoAccessException: No access to entity 'Brownfield_Opportunity__dlm'",
+          "stackTrace": "Class.PreventDuplicateDSRCreationTest.preventCreationOfDuplicateDSRsTest2: line 72, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "ContractHandlerTest",
+      "methods": [
+        {
+          "methodName": "testCreateContractSuccess",
+          "message": "System.AssertException: Assertion Failed: Contract should have been created.",
+          "stackTrace": "External entry point\nClass.ContractHandlerTest.testCreateContractSuccess: line 309, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountProcessBatchHandlerTest",
+      "methods": [
+        {
+          "methodName": "testAccMovesToAwait",
+          "message": "System.NoAccessException: No access to entity 'DNB_Account_Data_V1__dlm'",
+          "stackTrace": "Class.AccountProcessBatchHandlerTest.testAccMovesToAwait: line 123, column 1"
+        },
+        {
+          "methodName": "testAccUnderReview",
+          "message": "System.AssertException: Assertion Failed: Account set to under review when D&b info is missing: Expected: Under review, Actual: New",
+          "stackTrace": "Class.AccountProcessBatchHandlerTest.testAccUnderReview: line 172, column 1"
+        },
+        {
+          "methodName": "testEnrichAccountDC",
+          "message": "System.NoAccessException: No access to entity 'DNB_Account_Data_V1__dlm'",
+          "stackTrace": "Class.AccountProcessBatchHandlerTest.testEnrichAccountDC: line 44, column 1"
+        },
+        {
+          "methodName": "testNullRefCreatingParent",
+          "message": "System.NoAccessException: No access to entity 'DNB_Account_Data_V1__dlm'",
+          "stackTrace": "Class.AccountProcessBatchHandlerTest.testNullRefCreatingParent: line 93, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "LastTouchLeadCloneUnifiedScheduler_Test",
+      "methods": [
+        {
+          "methodName": "testScheduleCreatesCronJob",
+          "message": "LastTouchLeadCloneUnifiedBatch.LeadCloneBatchException:  ===> Error while resolving Avery user for LastTouchLeadCloneUnifiedBatch : Avery (Einstein Agent User) could not be resolved.",
+          "stackTrace": "Class.LastTouchLeadCloneUnifiedBatch.resolveAveryUser: line 223, column 1\nClass.LastTouchLeadCloneUnifiedBatch.start: line 45, column 1"
+        },
+        {
+          "methodName": "testSchedulerRunsBatch",
+          "message": "LastTouchLeadCloneUnifiedBatch.LeadCloneBatchException:  ===> Error while resolving Avery user for LastTouchLeadCloneUnifiedBatch : Avery (Einstein Agent User) could not be resolved.",
+          "stackTrace": "Class.LastTouchLeadCloneUnifiedBatch.resolveAveryUser: line 223, column 1\nClass.LastTouchLeadCloneUnifiedBatch.start: line 45, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "ActionCadenceTrackerAITriggerHandlerTest",
+      "methods": [
+        {
+          "methodName": "testNoUpdateLead_WorkingStatus",
+          "message": "System.AssertException: Assertion Failed: Lead status should remain unchanged: Expected: Qualify, Actual: Disqualified",
+          "stackTrace": "Class.ActionCadenceTrackerAITriggerHandlerTest.testNoUpdateLead_WorkingStatus: line 165, column 1"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "TaskAUHandlerTest",
+      "methods": [
+        {
+          "methodName": "testAllTasksToCompleted",
+          "message": "System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a \"Final\" ActionPlanTemplate exists that is of \"Sales\" type and targets \"Opportunity\": List has no rows for assignment to SObject",
+          "stackTrace": "Class.TaskAUHandlerTest.testAllTasksToCompleted: line 234, column 1"
+        },
+        {
+          "methodName": "testDMLException",
+          "message": "System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a \"Final\" ActionPlanTemplate exists that is of \"Sales\" type and targets \"Opportunity\": List has no rows for assignment to SObject",
+          "stackTrace": "Class.TaskAUHandlerTest.testDMLException: line 339, column 1"
+        },
+        {
+          "methodName": "testDMLExceptionAUHandler",
+          "message": "System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a \"Final\" ActionPlanTemplate exists that is of \"Sales\" type and targets \"Opportunity\": List has no rows for assignment to SObject",
+          "stackTrace": "Class.TaskAUHandlerTest.testDMLExceptionAUHandler: line 460, column 1"
+        },
+        {
+          "methodName": "testTaskStatusChange_ToCompleted",
+          "message": "System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a \"Final\" ActionPlanTemplate exists that is of \"Sales\" type and targets \"Opportunity\": List has no rows for assignment to SObject",
+          "stackTrace": "Class.TaskAUHandlerTest.testTaskStatusChange_ToCompleted: line 136, column 1"
+        },
+        {
+          "methodName": "testTaskStatusChange_ToInProgress",
+          "message": "System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a \"Final\" ActionPlanTemplate exists that is of \"Sales\" type and targets \"Opportunity\": List has no rows for assignment to SObject",
+          "stackTrace": "Class.TaskAUHandlerTest.testTaskStatusChange_ToInProgress: line 38, column 1"
+        }
+      ],
+      "lastCommitter": null
     }
   ],
   "lowCoverageClasses": [
+    {
+      "className": "AccountEmailBatch",
+      "linesCovered": 1,
+      "linesUncovered": 22,
+      "totalLines": 23,
+      "coveragePercentage": 4.35,
+      "lastCommitter": null
+    },
+    {
+      "className": "TaskActionPlanUpdateQueueable",
+      "linesCovered": 12,
+      "linesUncovered": 47,
+      "totalLines": 59,
+      "coveragePercentage": 20.34,
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountProcessBatchHandler",
+      "linesCovered": 40,
+      "linesUncovered": 93,
+      "totalLines": 133,
+      "coveragePercentage": 30.08,
+      "lastCommitter": null
+    },
+    {
+      "className": "LeadAgentTriggerHandler",
+      "linesCovered": 11,
+      "linesUncovered": 17,
+      "totalLines": 28,
+      "coveragePercentage": 39.29,
+      "lastCommitter": null
+    },
     {
       "className": "ESMCustomMatrixEligibilityImpl",
       "linesCovered": 115,
@@ -36,67 +276,83 @@
       "lastCommitter": null
     },
     {
-      "className": "LoggerCache",
-      "linesCovered": 74,
-      "linesUncovered": 12,
-      "totalLines": 86,
-      "coveragePercentage": 86.05,
+      "className": "ApprovalWorkItemService",
+      "linesCovered": 35,
+      "linesUncovered": 19,
+      "totalLines": 54,
+      "coveragePercentage": 64.81,
       "lastCommitter": null
     },
     {
-      "className": "LoggerSObjectHandler",
-      "linesCovered": 104,
+      "className": "AccountApprovalBatchQueueable",
+      "linesCovered": 11,
+      "linesUncovered": 5,
+      "totalLines": 16,
+      "coveragePercentage": 68.75,
+      "lastCommitter": null
+    },
+    {
+      "className": "AssignOwnerToSalesTargetLead",
+      "linesCovered": 11,
+      "linesUncovered": 5,
+      "totalLines": 16,
+      "coveragePercentage": 68.75,
+      "lastCommitter": null
+    },
+    {
+      "className": "CommunitiesSelfRegController",
+      "linesCovered": 32,
+      "linesUncovered": 10,
+      "totalLines": 42,
+      "coveragePercentage": 76.19,
+      "lastCommitter": null
+    },
+    {
+      "className": "LeadAfterTriggerService",
+      "linesCovered": 23,
+      "linesUncovered": 6,
+      "totalLines": 29,
+      "coveragePercentage": 79.31,
+      "lastCommitter": null
+    },
+    {
+      "className": "EmailMessageHandler",
+      "linesCovered": 50,
       "linesUncovered": 13,
-      "totalLines": 117,
-      "coveragePercentage": 88.89,
+      "totalLines": 63,
+      "coveragePercentage": 79.37,
       "lastCommitter": null
     },
     {
-      "className": "Logger",
-      "linesCovered": 988,
-      "linesUncovered": 89,
-      "totalLines": 1077,
-      "coveragePercentage": 91.74,
+      "className": "MicrobatchSelfRegController",
+      "linesCovered": 32,
+      "linesUncovered": 8,
+      "totalLines": 40,
+      "coveragePercentage": 80,
       "lastCommitter": null
     },
     {
-      "className": "LogEntryEventBuilder",
-      "linesCovered": 587,
-      "linesUncovered": 49,
-      "totalLines": 636,
-      "coveragePercentage": 92.3,
+      "className": "LogBatchPurger",
+      "linesCovered": 110,
+      "linesUncovered": 27,
+      "totalLines": 137,
+      "coveragePercentage": 80.29,
       "lastCommitter": null
     },
     {
-      "className": "LoggerEmailSender",
-      "linesCovered": 88,
-      "linesUncovered": 7,
-      "totalLines": 95,
-      "coveragePercentage": 92.63,
+      "className": "SiteRegisterController",
+      "linesCovered": 22,
+      "linesUncovered": 5,
+      "totalLines": 27,
+      "coveragePercentage": 81.48,
       "lastCommitter": null
     },
     {
-      "className": "LogEntryEventHandler",
-      "linesCovered": 457,
-      "linesUncovered": 34,
-      "totalLines": 491,
-      "coveragePercentage": 93.08,
-      "lastCommitter": null
-    },
-    {
-      "className": "LoggerPlugin",
-      "linesCovered": 61,
-      "linesUncovered": 4,
-      "totalLines": 65,
-      "coveragePercentage": 93.85,
-      "lastCommitter": null
-    },
-    {
-      "className": "StateCodes",
-      "linesCovered": 940,
-      "linesUncovered": 60,
-      "totalLines": 1000,
-      "coveragePercentage": 94,
+      "className": "ApprovalWorkItemCallout",
+      "linesCovered": 9,
+      "linesUncovered": 2,
+      "totalLines": 11,
+      "coveragePercentage": 81.82,
       "lastCommitter": null
     }
   ]

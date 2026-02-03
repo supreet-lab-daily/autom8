@@ -22,17 +22,17 @@
   <h1>🔴 Salesforce Apex Test Report</h1>
   
   <div class="metric-box">
-    <p><strong>Generated:</strong> 2026-01-29T19:34:48.147Z</p>
-    <p><strong>Test Run ID:</strong> 707O2000029uEqT</p>
-    <p><strong>Workflow:</strong> <a href="https://github.com/supreet-lab-daily/autom8/actions/runs/21491115153">View on GitHub</a></p>
+    <p><strong>Generated:</strong> 2026-01-30T15:17:48.127Z</p>
+    <p><strong>Test Run ID:</strong> 707O200002A6ai3</p>
+    <p><strong>Workflow:</strong> <a href="https://github.com/supreet-lab-daily/autom8/actions/runs/21519937563">View on GitHub</a></p>
   </div>
   
   <h2>Summary</h2>
   <table>
     <tr><th>Metric</th><th>Value</th></tr>
     <tr><td>Tests Run</td><td><strong>1992</strong></td></tr>
-    <tr><td>Passing</td><td class="success"><strong>1958</strong></td></tr>
-    <tr><td>Failing</td><td class="failure"><strong>34</strong></td></tr>
+    <tr><td>Passing</td><td class="success"><strong>1952</strong></td></tr>
+    <tr><td>Failing</td><td class="failure"><strong>40</strong></td></tr>
     <tr><td>Pass Rate</td><td><strong>98%</strong></td></tr>
     <tr><td>Outcome</td><td class="failure"><strong>Failed</strong></td></tr>
     <tr><td>Org Coverage</td><td><strong>90%</strong></td></tr>
@@ -40,12 +40,6 @@
     <tr><td>Low Coverage Classes</td><td class="warning"><strong>45</strong></td></tr>
   </table>
   <h2 class="failure">❌ Failing Test Classes</h2>
-  <div class="error-box">
-    <h3><span class="code">AssignOwnerToSalesTargetLeadTest</span></h3>
-    <p><strong>Failed Methods:</strong></p><ul>
-      <li><span class="code">TestAccountActiveOwner</span><br><em>System.AssertException: Assertion Failed: Account Owner is set to lead Owner: Expected: 005fK000001TKysQAG, Actual: 005O200000TiaecIAB</em></li>
-      <li><span class="code">TestAccountInActiveOwner</span><br><em>System.AssertException: Assertion Failed: Account Owner manager is set to lead Owner: Expected: 005fK000001TKysQAG, Actual: 005O200000TiaebIAB</em></li>
-    </ul></div>
   <div class="error-box">
     <h3><span class="code">SupportTeamMemberTriggerTest</span></h3>
     <p><strong>Failed Methods:</strong></p><ul>
@@ -66,20 +60,30 @@
       <li><span class="code">testSuccessUpdateExistingSettingAndDeleteSetting</span><br><em>System.DmlException: Insert failed. First exception on row 0; first error: FIELD_CUSTOM_VALIDATION_EXCEPTION, You can only create Support Team Member records for the teams you are a Lead of (a6eO20000</em></li>
     </ul></div>
   <div class="error-box">
-    <h3><span class="code">ESMCustomMatrixEligibilityImplTest</span></h3>
+    <h3><span class="code">TaskAUHandlerTest</span></h3>
     <p><strong>Failed Methods:</strong></p><ul>
-      <li><span class="code">testcheckEligibility</span><br><em>System.NullPointerException: Attempt to de-reference a null object</em></li>
+      <li><span class="code">testAllTasksToCompleted</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
+      <li><span class="code">testDMLException</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
+      <li><span class="code">testDMLExceptionAUHandler</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
+      <li><span class="code">testTaskStatusChange_ToCompleted</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
+      <li><span class="code">testTaskStatusChange_ToInProgress</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
     </ul></div>
   <div class="error-box">
-    <h3><span class="code">PreventDuplicateDSRCreationTest</span></h3>
+    <h3><span class="code">LastTouchLeadCloneUnifiedScheduler_Test</span></h3>
     <p><strong>Failed Methods:</strong></p><ul>
-      <li><span class="code">preventCreationOfDuplicateDSRsTest1</span><br><em>System.NoAccessException: No access to entity 'Brownfield_Opportunity__dlm'</em></li>
-      <li><span class="code">preventCreationOfDuplicateDSRsTest2</span><br><em>System.NoAccessException: No access to entity 'Brownfield_Opportunity__dlm'</em></li>
+      <li><span class="code">testScheduleCreatesCronJob</span><br><em>LastTouchLeadCloneUnifiedBatch.LeadCloneBatchException:  ===&gt; Error while resolving Avery user for LastTouchLeadCloneUnifiedBatch : Avery (Einstein Agent User) could not be resolved.</em></li>
+      <li><span class="code">testSchedulerRunsBatch</span><br><em>LastTouchLeadCloneUnifiedBatch.LeadCloneBatchException:  ===&gt; Error while resolving Avery user for LastTouchLeadCloneUnifiedBatch : Avery (Einstein Agent User) could not be resolved.</em></li>
     </ul></div>
   <div class="error-box">
-    <h3><span class="code">ContractHandlerTest</span></h3>
+    <h3><span class="code">TestFactory</span></h3>
     <p><strong>Failed Methods:</strong></p><ul>
-      <li><span class="code">testCreateContractSuccess</span><br><em>System.AssertException: Assertion Failed: Contract should have been created.</em></li>
+      <li><span class="code">TestMethod1</span><br><em>System.DmlException: Insert failed. First exception on row 0; first error: INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY, insufficient access rights on cross-reference id: []</em></li>
+    </ul></div>
+  <div class="error-box">
+    <h3><span class="code">AssignOwnerToSalesTargetLeadTest</span></h3>
+    <p><strong>Failed Methods:</strong></p><ul>
+      <li><span class="code">TestAccountActiveOwner</span><br><em>System.AssertException: Assertion Failed: Account Owner is set to lead Owner: Expected: 005fK000001TKysQAG, Actual: 005O200000TjwryIAB</em></li>
+      <li><span class="code">TestAccountInActiveOwner</span><br><em>System.AssertException: Assertion Failed: Account Owner manager is set to lead Owner: Expected: 005fK000001TKysQAG, Actual: 005O200000TjwrxIAB</em></li>
     </ul></div>
   <div class="error-box">
     <h3><span class="code">AccountProcessBatchHandlerTest</span></h3>
@@ -90,10 +94,22 @@
       <li><span class="code">testNullRefCreatingParent</span><br><em>System.NoAccessException: No access to entity 'DNB_Account_Data_V1__dlm'</em></li>
     </ul></div>
   <div class="error-box">
-    <h3><span class="code">LastTouchLeadCloneUnifiedScheduler_Test</span></h3>
+    <h3><span class="code">ContractHandlerTest</span></h3>
     <p><strong>Failed Methods:</strong></p><ul>
-      <li><span class="code">testScheduleCreatesCronJob</span><br><em>LastTouchLeadCloneUnifiedBatch.LeadCloneBatchException:  ===&gt; Error while resolving Avery user for LastTouchLeadCloneUnifiedBatch : Avery (Einstein Agent User) could not be resolved.</em></li>
-      <li><span class="code">testSchedulerRunsBatch</span><br><em>LastTouchLeadCloneUnifiedBatch.LeadCloneBatchException:  ===&gt; Error while resolving Avery user for LastTouchLeadCloneUnifiedBatch : Avery (Einstein Agent User) could not be resolved.</em></li>
+      <li><span class="code">testCreateContractSuccess</span><br><em>System.AssertException: Assertion Failed: Contract should have been created.</em></li>
+    </ul></div>
+  <div class="error-box">
+    <h3><span class="code">ESMCustomMatrixEligibilityImplTest</span></h3>
+    <p><strong>Failed Methods:</strong></p><ul>
+      <li><span class="code">testcheckEligibility</span><br><em>System.NullPointerException: Attempt to de-reference a null object</em></li>
+    </ul></div>
+  <div class="error-box">
+    <h3><span class="code">LeadSLAAutomationBatchTest</span></h3>
+    <p><strong>Failed Methods:</strong></p><ul>
+      <li><span class="code">testBatchScheduler</span><br><em>System.DmlException: Insert failed. First exception on row 0; first error: UNABLE_TO_LOCK_ROW, unable to obtain exclusive access to this record: []</em></li>
+      <li><span class="code">testInvalidUsers</span><br><em>System.DmlException: Insert failed. First exception on row 0; first error: UNABLE_TO_LOCK_ROW, unable to obtain exclusive access to this record: []</em></li>
+      <li><span class="code">testLeadOneDaySLA</span><br><em>System.DmlException: Insert failed. First exception on row 0; first error: UNABLE_TO_LOCK_ROW, unable to obtain exclusive access to this record: []</em></li>
+      <li><span class="code">testLeadThreeDaySLA</span><br><em>System.DmlException: Insert failed. First exception on row 0; first error: UNABLE_TO_LOCK_ROW, unable to obtain exclusive access to this record: []</em></li>
     </ul></div>
   <div class="error-box">
     <h3><span class="code">ActionCadenceTrackerAITriggerHandlerTest</span></h3>
@@ -101,13 +117,10 @@
       <li><span class="code">testNoUpdateLead_WorkingStatus</span><br><em>System.AssertException: Assertion Failed: Lead status should remain unchanged: Expected: Qualify, Actual: Disqualified</em></li>
     </ul></div>
   <div class="error-box">
-    <h3><span class="code">TaskAUHandlerTest</span></h3>
+    <h3><span class="code">PreventDuplicateDSRCreationTest</span></h3>
     <p><strong>Failed Methods:</strong></p><ul>
-      <li><span class="code">testAllTasksToCompleted</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
-      <li><span class="code">testDMLException</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
-      <li><span class="code">testDMLExceptionAUHandler</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
-      <li><span class="code">testTaskStatusChange_ToCompleted</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
-      <li><span class="code">testTaskStatusChange_ToInProgress</span><br><em>System.AssertException: Assertion Failed: TEST SETUP ERROR: Failed to find suitable ActionPlanTemplateVersion. Ensure a "Final" ActionPlanTemplate exists that is of "Sales" type and targets "Opportuni</em></li>
+      <li><span class="code">preventCreationOfDuplicateDSRsTest1</span><br><em>System.NoAccessException: No access to entity 'Brownfield_Opportunity__dlm'</em></li>
+      <li><span class="code">preventCreationOfDuplicateDSRsTest2</span><br><em>System.NoAccessException: No access to entity 'Brownfield_Opportunity__dlm'</em></li>
     </ul></div>
   <h2 class="warning">📉 Classes Below 95% Coverage</h2>
   <p><strong>Warning:</strong> 45 classes are below the 95% coverage threshold.</p>
@@ -177,7 +190,7 @@
   <p><em>... and 35 more classes below threshold</em></p>
   <div class="footer">
     <p>This report was generated automatically by the Salesforce DevOps Pipeline.</p>
-    <p>For full details, see the <a href="https://github.com/supreet-lab-daily/autom8/actions/runs/21491115153">GitHub Actions workflow run</a>.</p>
+    <p>For full details, see the <a href="https://github.com/supreet-lab-daily/autom8/actions/runs/21519937563">GitHub Actions workflow run</a>.</p>
   </div>
 </body>
 </html>
