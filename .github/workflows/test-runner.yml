@@ -1,31 +1,27 @@
 # ============================================================================
-# Scheduled Salesforce Test Runner (Git Report)
+# Scheduled Salesforce Test Runner
 # ============================================================================
-# Runs Apex tests on a schedule and generates comprehensive reports including:
-# - Test pass/fail summary
-# - Coverage analysis (flags classes below threshold)
-# - Last committer attribution for failing/low-coverage classes
-# - Committed test reports to dedicated reports directory
+# Runs Apex tests daily at 3:00 AM IST and generates comprehensive reports
 # ============================================================================
 
 name: Scheduled Salesforce Test Runner
 
 on:
   schedule:
-    # Runs at 6 AM UTC Monday-Friday
-    - cron: '0 6 * * 1-5'
+    # Runs at 3:00 AM IST daily (21:30 UTC previous day)
+    - cron: '30 21 * * *'
   
   workflow_dispatch:
     inputs:
       test_level:
         description: 'Test Level'
         required: true
-        default: 'RunSpecifiedTests'
+        default: 'RunLocalTests'
         type: choice
         options:
-          - RunSpecifiedTests
           - RunLocalTests
           - RunAllTestsInOrg
+          - RunSpecifiedTests
       specified_tests:
         description: 'Comma-separated test classes (only for RunSpecifiedTests)'
         required: false
@@ -44,6 +40,7 @@ env:
   SF_ORG_ALIAS: 'TestSandbox'
   COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold || '95' }}
   REPORTS_DIR: 'test-reports'
+  TEST_LEVEL: ${{ inputs.test_level || 'RunLocalTests' }}
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
@@ -99,79 +96,49 @@ jobs:
           set -o pipefail
           mkdir -p ./test-results
           
-          TEST_LEVEL="${{ inputs.test_level || 'RunSpecifiedTests' }}"
-          SPECIFIED_TESTS="${{ inputs.specified_tests }}"
-          
           # Validate RunSpecifiedTests has classes
-          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -z "$SPECIFIED_TESTS" ]]; then
+          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" && -z "${{ inputs.specified_tests }}" ]]; then
             echo "::error::No test classes specified. Provide comma-separated class names."
             exit 1
           fi
           
-          # Build command arguments
-          ARGS=(
-            --target-org "${{ env.SF_ORG_ALIAS }}"
-            --code-coverage
-            --result-format json
-            --output-dir ./test-results
-            --wait 30
-          )
-          
-          # Add test level or specific classes
-          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" ]]; then
-            ARGS+=(--class-names "$SPECIFIED_TESTS")
-            echo "🧪 Running specified tests: $SPECIFIED_TESTS"
+          # Build command
+          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
+            echo "🧪 Running specified tests: ${{ inputs.specified_tests }}"
+            sf apex run test \
+              --target-org "${{ env.SF_ORG_ALIAS }}" \
+              --class-names "${{ inputs.specified_tests }}" \
+              --code-coverage \
+              --result-format json \
+              --output-dir ./test-results \
+              --wait 30 || TEST_EXIT=$?
           else
-            ARGS+=(--test-level "$TEST_LEVEL")
-            echo "🧪 Running test level: $TEST_LEVEL"
+            echo "🧪 Running test level: ${{ env.TEST_LEVEL }}"
+            sf apex run test \
+              --target-org "${{ env.SF_ORG_ALIAS }}" \
+              --test-level "${{ env.TEST_LEVEL }}" \
+              --code-coverage \
+              --result-format json \
+              --output-dir ./test-results \
+              --wait 30 || TEST_EXIT=$?
           fi
-          
-          # Execute tests
-          echo "::group::Test Execution Output"
-          sf apex run test "${ARGS[@]}" || TEST_EXIT=$?
-          echo "::endgroup::"
           
           TEST_EXIT=${TEST_EXIT:-0}
           echo "CLI exit code: $TEST_EXIT"
           
-          # Find the main test result file (exclude coverage/junit files)
+          # Find and copy test result file
           RESULT_FILE=$(find ./test-results -name "test-result-*.json" -type f \
             ! -name "*-codecoverage.json" \
             ! -name "*-junit.xml" | head -1)
           
           if [[ -z "$RESULT_FILE" ]]; then
-            echo "::error::No test result file found. Execution may have failed."
-            echo "::group::Available files"
+            echo "::error::No test result file found."
             ls -lh ./test-results/
-            echo "::endgroup::"
             exit 1
           fi
           
-          echo "✅ Found test result file: $RESULT_FILE"
-          
-          # Copy to consistent filename for downstream steps
           cp "$RESULT_FILE" ./test-results/test-results.json
-          
-          # Debug: Show the structure of the result file
-          echo "::group::Result File Structure"
-          node -e "
-            const raw = require('./test-results/test-results.json');
-            const r = raw.result || raw;
-            const s = r.summary || {};
-            const tests = r.tests || [];
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('📊 Test Results Structure Validation');
-            console.log('   File type: ' + (Array.isArray(raw) ? 'ARRAY (WRONG!)' : 'OBJECT (CORRECT)'));
-            console.log('   Has result wrapper: ' + !!raw.result);
-            console.log('   Has summary: ' + !!(r.summary));
-            console.log('   Tests in array: ' + tests.length);
-            console.log('   Summary.testsRan: ' + (s.testsRan || 'N/A'));
-            console.log('   Summary.passing: ' + (s.passing || 'N/A'));
-            console.log('   Summary.failing: ' + (s.failing || 'N/A'));
-            console.log('   Outcome: ' + (s.outcome || 'Unknown'));
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-          "
-          echo "::endgroup::"
+          echo "✅ Test results saved"
           
           # Fail only on execution errors, not test failures
           if [[ $TEST_EXIT -ne 0 && $TEST_EXIT -ne 100 ]]; then
@@ -189,100 +156,72 @@ jobs:
           const fs = require('fs');
           const { execSync } = require('child_process');
           
-          // ── Load test results ──
+          // Load test results
           const rawData = JSON.parse(fs.readFileSync('./test-results/test-results.json', 'utf8'));
           
-          // Validation: Ensure we have test results, not coverage array
           if (Array.isArray(rawData)) {
-            console.error('❌ ERROR: test-results.json is an array (coverage data), not test results!');
-            console.error('   This means the wrong file was copied in the previous step.');
+            console.error('❌ ERROR: Invalid test results format');
             process.exit(1);
           }
           
-          // Handle both SF CLI output structures
           const testData = rawData.result || rawData;
           const summary = testData.summary || {};
           const tests = testData.tests || [];
           
-          // Debug: Log what we found
-          console.log('📋 Parsed test data structure:');
-          console.log('   Has result wrapper:', !!rawData.result);
-          console.log('   Summary keys:', Object.keys(summary).join(', ') || 'none');
-          console.log('   Tests count:', tests.length);
-          console.log('   Tests ran:', summary.testsRan);
-          console.log('   Passing:', summary.passing);
-          console.log('   Failing:', summary.failing);
+          console.log(`📋 Tests: ${summary.testsRan}, Passing: ${summary.passing}, Failing: ${summary.failing}`);
           
-          // Load coverage data from SF CLI output
+          // Load coverage data
           let coverageData = [];
-          
-          // First try: Check if coverage is embedded in test results
           if (testData.coverage?.coverage) {
-            console.log('✅ Using embedded coverage data from test results');
             coverageData = testData.coverage.coverage;
           } else {
-            // Second try: Load from separate codecoverage file
-            try {
-              const coverageFile = './test-results/test-result-codecoverage.json';
-              if (fs.existsSync(coverageFile)) {
-                const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
-                coverageData = Array.isArray(coverage) ? coverage : [];
-                console.log(`✅ Loaded coverage from ${coverageFile}: ${coverageData.length} classes`);
-              }
-            } catch (e) {
-              console.warn('⚠️ Could not load separate coverage file:', e.message);
+            const coverageFile = './test-results/test-result-codecoverage.json';
+            if (fs.existsSync(coverageFile)) {
+              const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
+              coverageData = Array.isArray(coverage) ? coverage : [];
             }
           }
           
-          // ── Parse coverage ──
+          // Parse coverage
           const threshold = parseFloat(process.env.COVERAGE_THRESHOLD || '95');
-          const coverage = coverageData.map(c => {
-            const covered = parseInt(c.totalCovered || c.numLinesCovered || 0);
-            const total = parseInt(c.totalLines || 0);
-            const uncovered = total - covered;
-            const percentage = total > 0 ? Math.round((covered / total) * 10000) / 100 : 0;
-            
-            return {
-              className: c.name || c.apexClassOrTrigger?.name || 'Unknown',
-              linesCovered: covered,
-              linesUncovered: uncovered,
-              totalLines: total,
-              coveragePercentage: percentage
-            };
-          });
+          const coverage = coverageData.map(c => ({
+            className: c.name || c.apexClassOrTrigger?.name || 'Unknown',
+            linesCovered: parseInt(c.totalCovered || c.numLinesCovered || 0),
+            linesUncovered: parseInt(c.totalLines || 0) - parseInt(c.totalCovered || c.numLinesCovered || 0),
+            totalLines: parseInt(c.totalLines || 0),
+            coveragePercentage: parseInt(c.totalLines || 0) > 0 
+              ? Math.round((parseInt(c.totalCovered || c.numLinesCovered || 0) / parseInt(c.totalLines || 0)) * 10000) / 100 
+              : 0
+          }));
           
           const lowCoverage = coverage
             .filter(c => c.coveragePercentage < threshold && c.totalLines > 0)
             .sort((a, b) => a.coveragePercentage - b.coveragePercentage);
           
-          console.log(`📊 Coverage analysis: ${coverage.length} classes, ${lowCoverage.length} below ${threshold}%`);
+          console.log(`📊 Coverage: ${coverage.length} classes, ${lowCoverage.length} below ${threshold}%`);
           
-          // ── Parse failures and group by class ──
+          // Parse failures
           const failuresByClass = {};
-          tests
-            .filter(t => (t.Outcome || t.outcome) === 'Fail')
-            .forEach(t => {
-              const className = t.ApexClass?.Name || t.ClassName || t.apexClass?.name || 'Unknown';
-              if (!failuresByClass[className]) {
-                failuresByClass[className] = { className, methods: [] };
-              }
-              failuresByClass[className].methods.push({
-                methodName: t.MethodName || t.methodName,
-                message: t.Message || t.message,
-                stackTrace: t.StackTrace || t.stackTrace
-              });
+          tests.filter(t => (t.Outcome || t.outcome) === 'Fail').forEach(t => {
+            const className = t.ApexClass?.Name || t.ClassName || t.apexClass?.name || 'Unknown';
+            if (!failuresByClass[className]) {
+              failuresByClass[className] = { className, methods: [] };
+            }
+            failuresByClass[className].methods.push({
+              methodName: t.MethodName || t.methodName,
+              message: t.Message || t.message,
+              stackTrace: t.StackTrace || t.stackTrace
             });
+          });
           
-          // ── Git blame lookup ──
+          // Git blame lookup
           function getLastCommitter(className) {
-            const paths = [
-              `force-app/main/default/classes/${className}.cls`,
-              `src/classes/${className}.cls`
-            ];
+            const paths = [`force-app/main/default/classes/${className}.cls`, `src/classes/${className}.cls`];
             for (const p of paths) {
               if (fs.existsSync(p)) {
                 try {
-                  const result = execSync(`git log -1 --format="%an|%ae|%aI" -- "${p}"`, { encoding: 'utf8', timeout: 5000 }).trim();
+                  const result = execSync(`git log -1 --format="%an|%ae|%aI" -- "${p}"`, 
+                    { encoding: 'utf8', timeout: 5000 }).trim();
                   if (result) {
                     const [name, email, date] = result.split('|');
                     return { name, email, date: date?.split('T')[0] };
@@ -293,11 +232,10 @@ jobs:
             return null;
           }
           
-          // Add committer info
           Object.values(failuresByClass).forEach(f => f.lastCommitter = getLastCommitter(f.className));
           lowCoverage.forEach(c => c.lastCommitter = getLastCommitter(c.className));
           
-          // ── Build report ──
+          // Build report
           const now = new Date();
           const reportDate = now.toISOString().split('T')[0];
           const reportTime = now.toISOString();
@@ -306,9 +244,9 @@ jobs:
             summary: {
               outcome: summary.outcome || 'Unknown',
               testsRan: parseInt(summary.testsRan) || tests.length || 0,
-              passing: parseInt(summary.passing) || tests.filter(t => (t.Outcome || t.outcome) === 'Pass').length || 0,
-              failing: parseInt(summary.failing) || tests.filter(t => (t.Outcome || t.outcome) === 'Fail').length || 0,
-              passRate: summary.passRate || (summary.testsRan > 0 ? `${Math.round((summary.passing / summary.testsRan) * 100)}%` : '0%'),
+              passing: parseInt(summary.passing) || 0,
+              failing: parseInt(summary.failing) || 0,
+              passRate: summary.passRate || `${Math.round((parseInt(summary.passing) / parseInt(summary.testsRan)) * 100)}%`,
               testRunId: summary.testRunId || 'N/A',
               orgWideCoverage: summary.orgWideCoverage || 'N/A',
               testRunCoverage: summary.testRunCoverage || 'N/A',
@@ -323,163 +261,96 @@ jobs:
           
           fs.writeFileSync('./test-results/report.json', JSON.stringify(report, null, 2));
           
-          // ── Generate Markdown Report ──
+          // Generate Markdown Report
           const isHealthy = report.summary.failing === 0 && lowCoverage.length === 0;
           let md = `# 🧪 Salesforce Apex Test Report\n\n`;
           md += `**Generated:** ${report.summary.timestamp}\n`;
-          md += `**Test Run ID:** ${report.summary.testRunId}\n`;
-          md += `**Workflow Run:** [View Details](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})\n\n`;
-          md += `---\n\n`;
+          md += `**Test Run ID:** ${report.summary.testRunId}\n\n`;
           md += `## ${isHealthy ? '✅' : '🔴'} Summary\n\n`;
           md += `| Metric | Value |\n|--------|-------|\n`;
-          md += `| **Tests Run** | ${report.summary.testsRan} |\n`;
-          md += `| **Passing** | ✅ ${report.summary.passing} |\n`;
-          md += `| **Failing** | ${report.summary.failing > 0 ? '❌' : '✅'} ${report.summary.failing} |\n`;
-          md += `| **Pass Rate** | ${report.summary.passRate} |\n`;
-          md += `| **Outcome** | ${report.summary.outcome} |\n`;
-          md += `| **Org-Wide Coverage** | ${report.summary.orgWideCoverage} |\n`;
-          md += `| **Test Run Coverage** | ${report.summary.testRunCoverage} |\n`;
-          md += `| **Classes Below ${threshold}%** | ${lowCoverage.length > 0 ? '⚠️' : '✅'} ${lowCoverage.length} |\n\n`;
+          md += `| Tests Run | ${report.summary.testsRan} |\n`;
+          md += `| Passing | ✅ ${report.summary.passing} |\n`;
+          md += `| Failing | ${report.summary.failing > 0 ? '❌' : '✅'} ${report.summary.failing} |\n`;
+          md += `| Pass Rate | ${report.summary.passRate} |\n`;
+          md += `| Org Coverage | ${report.summary.orgWideCoverage} |\n`;
+          md += `| Low Coverage Classes | ${lowCoverage.length > 0 ? '⚠️' : '✅'} ${lowCoverage.length} |\n\n`;
           
           if (report.failingClasses.length > 0) {
-            md += `---\n\n`;
             md += `## ❌ Failing Test Classes\n\n`;
             report.failingClasses.forEach(f => {
-              md += `### \`${f.className}\`\n\n`;
-              if (f.lastCommitter) {
-                md += `**Last Modified By:** ${f.lastCommitter.name} (${f.lastCommitter.email})  \n`;
-                md += `**Date:** ${f.lastCommitter.date}\n\n`;
-              }
-              md += `**Failed Methods:**\n\n`;
+              md += `### \`${f.className}\`\n`;
+              if (f.lastCommitter) md += `**Last Modified:** ${f.lastCommitter.name} on ${f.lastCommitter.date}\n`;
+              md += `\n**Failed Methods:**\n`;
               f.methods.forEach(m => {
-                md += `#### \`${m.methodName}\`\n\n`;
-                if (m.message) {
-                  md += `**Error Message:**\n\`\`\`\n${m.message}\n\`\`\`\n\n`;
-                }
-                if (m.stackTrace) {
-                  md += `**Stack Trace:**\n\`\`\`\n${m.stackTrace}\n\`\`\`\n\n`;
-                }
+                md += `- \`${m.methodName}\`\n`;
+                if (m.message) md += `  - Error: ${m.message.substring(0, 150)}\n`;
               });
+              md += `\n`;
             });
           }
           
           if (lowCoverage.length > 0) {
-            md += `---\n\n`;
-            md += `## 📉 Classes Below ${threshold}% Coverage\n\n`;
-            md += `> **Warning:** ${lowCoverage.length} classes are below the ${threshold}% coverage threshold.\n\n`;
-            md += `| Class | Coverage | Lines Covered/Total | Last Modified By |\n`;
-            md += `|-------|----------|---------------------|------------------|\n`;
+            md += `## 📉 Low Coverage Classes (Below ${threshold}%)\n\n`;
+            md += `| Class | Coverage | Lines |\n|-------|----------|-------|\n`;
             lowCoverage.slice(0, 15).forEach(c => {
-              const coverageIcon = c.coveragePercentage < 50 ? '🔴' : c.coveragePercentage < threshold ? '⚠️' : '✅';
-              const committer = c.lastCommitter ? `${c.lastCommitter.name}` : 'Unknown';
-              md += `| \`${c.className}\` | ${coverageIcon} ${c.coveragePercentage.toFixed(1)}% | ${c.linesCovered}/${c.totalLines} | ${committer} |\n`;
+              const icon = c.coveragePercentage < 50 ? '🔴' : '⚠️';
+              md += `| \`${c.className}\` | ${icon} ${c.coveragePercentage.toFixed(1)}% | ${c.linesCovered}/${c.totalLines} |\n`;
             });
-            
-            if (lowCoverage.length > 15) {
-              md += `\n_... and ${lowCoverage.length - 15} more classes below threshold_\n`;
-            }
+            if (lowCoverage.length > 15) md += `\n_... and ${lowCoverage.length - 15} more_\n`;
           }
-          
-          md += `\n---\n\n`;
-          md += `_Report generated automatically by Salesforce DevOps Pipeline_\n`;
           
           fs.writeFileSync('./test-results/report.md', md);
           
-          // ── Generate Email-friendly HTML Report ──
+          // Generate HTML Report
           const statusColor = isHealthy ? '#28a745' : '#dc3545';
-          const statusEmoji = isHealthy ? '✅' : '🔴';
-          
-          // Build HTML in parts to avoid YAML parsing issues
-          let html = '<!DOCTYPE html>\n';
-          html += '<html>\n';
-          html += '<head>\n';
-          html += '  <meta charset="UTF-8">\n';
-          html += '  <style>\n';
-          html += '    body { font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }\n';
-          html += '    h1 { color: ' + statusColor + '; border-bottom: 3px solid ' + statusColor + '; padding-bottom: 10px; }\n';
-          html += '    h2 { color: #0366d6; margin-top: 30px; }\n';
-          html += '    table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n';
-          html += '    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }\n';
-          html += '    th { background-color: #f6f8fa; font-weight: 600; }\n';
-          html += '    .success { color: #28a745; }\n';
-          html += '    .failure { color: #dc3545; }\n';
-          html += '    .warning { color: #ffc107; }\n';
-          html += '    .metric-box { background: #f6f8fa; padding: 15px; border-radius: 6px; margin: 10px 0; }\n';
-          html += '    .code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: monospace; }\n';
-          html += '    .error-box { background: #fff5f5; border-left: 4px solid #dc3545; padding: 15px; margin: 10px 0; }\n';
-          html += '    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }\n';
-          html += '  </style>\n';
-          html += '</head>\n';
-          html += '<body>\n';
-          html += '  <h1>' + statusEmoji + ' Salesforce Apex Test Report</h1>\n';
-          html += '  \n';
-          html += '  <div class="metric-box">\n';
-          html += '    <p><strong>Generated:</strong> ' + report.summary.timestamp + '</p>\n';
-          html += '    <p><strong>Test Run ID:</strong> ' + report.summary.testRunId + '</p>\n';
-          html += '    <p><strong>Workflow:</strong> <a href="' + process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID + '">View on GitHub</a></p>\n';
-          html += '  </div>\n';
-          html += '  \n';
-          html += '  <h2>Summary</h2>\n';
-          html += '  <table>\n';
-          html += '    <tr><th>Metric</th><th>Value</th></tr>\n';
-          html += '    <tr><td>Tests Run</td><td><strong>' + report.summary.testsRan + '</strong></td></tr>\n';
-          html += '    <tr><td>Passing</td><td class="success"><strong>' + report.summary.passing + '</strong></td></tr>\n';
-          html += '    <tr><td>Failing</td><td class="' + (report.summary.failing > 0 ? 'failure' : 'success') + '"><strong>' + report.summary.failing + '</strong></td></tr>\n';
-          html += '    <tr><td>Pass Rate</td><td><strong>' + report.summary.passRate + '</strong></td></tr>\n';
-          html += '    <tr><td>Outcome</td><td class="' + (isHealthy ? 'success' : 'failure') + '"><strong>' + report.summary.outcome + '</strong></td></tr>\n';
-          html += '    <tr><td>Org Coverage</td><td><strong>' + report.summary.orgWideCoverage + '</strong></td></tr>\n';
-          html += '    <tr><td>Test Run Coverage</td><td><strong>' + report.summary.testRunCoverage + '</strong></td></tr>\n';
-          html += '    <tr><td>Low Coverage Classes</td><td class="' + (lowCoverage.length > 0 ? 'warning' : 'success') + '"><strong>' + lowCoverage.length + '</strong></td></tr>\n';
-          html += '  </table>\n';
+          let html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+  body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+  h1 { color: ${statusColor}; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+  th { background: #f5f5f5; }
+  .success { color: #28a745; }
+  .failure { color: #dc3545; }
+  .warning { color: #ffc107; }
+</style></head><body>
+<h1>${isHealthy ? '✅' : '🔴'} Salesforce Test Report</h1>
+<p><strong>Generated:</strong> ${report.summary.timestamp}</p>
+<h2>Summary</h2>
+<table>
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>Tests Run</td><td>${report.summary.testsRan}</td></tr>
+  <tr><td>Passing</td><td class="success">${report.summary.passing}</td></tr>
+  <tr><td>Failing</td><td class="${report.summary.failing > 0 ? 'failure' : 'success'}">${report.summary.failing}</td></tr>
+  <tr><td>Pass Rate</td><td>${report.summary.passRate}</td></tr>
+  <tr><td>Org Coverage</td><td>${report.summary.orgWideCoverage}</td></tr>
+</table>`;
           
           if (report.failingClasses.length > 0) {
-            html += '  <h2 class="failure">❌ Failing Test Classes</h2>\n';
+            html += '<h2>❌ Failing Classes</h2>';
             report.failingClasses.forEach(f => {
-              html += '  <div class="error-box">\n';
-              html += '    <h3><span class="code">' + f.className + '</span></h3>\n';
-              if (f.lastCommitter) {
-                html += '    <p><strong>Last Modified:</strong> ' + f.lastCommitter.name + ' (' + f.lastCommitter.email + ') on ' + f.lastCommitter.date + '</p>\n';
-              }
-              html += '    <p><strong>Failed Methods:</strong></p><ul>\n';
+              html += `<h3>${f.className}</h3><ul>`;
               f.methods.forEach(m => {
-                html += '      <li><span class="code">' + m.methodName + '</span>';
-                if (m.message) html += '<br><em>' + m.message.substring(0, 200).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</em>';
-                html += '</li>\n';
+                html += `<li>${m.methodName}</li>`;
               });
-              html += '    </ul></div>\n';
+              html += '</ul>';
             });
           }
           
           if (lowCoverage.length > 0) {
-            html += '  <h2 class="warning">📉 Classes Below ' + threshold + '% Coverage</h2>\n';
-            html += '  <p><strong>Warning:</strong> ' + lowCoverage.length + ' classes are below the ' + threshold + '% coverage threshold.</p>\n';
-            html += '  <table>\n';
-            html += '    <tr><th>Class</th><th>Coverage</th><th>Lines</th><th>Last Modified By</th></tr>\n';
+            html += `<h2>📉 Low Coverage (Below ${threshold}%)</h2><table>
+<tr><th>Class</th><th>Coverage</th></tr>`;
             lowCoverage.slice(0, 10).forEach(c => {
-              const coverageClass = c.coveragePercentage < 50 ? 'failure' : 'warning';
-              html += '    <tr>\n';
-              html += '      <td><span class="code">' + c.className + '</span></td>\n';
-              html += '      <td class="' + coverageClass + '"><strong>' + c.coveragePercentage.toFixed(1) + '%</strong></td>\n';
-              html += '      <td>' + c.linesCovered + '/' + c.totalLines + '</td>\n';
-              html += '      <td>' + (c.lastCommitter?.name || 'Unknown') + '</td>\n';
-              html += '    </tr>\n';
+              html += `<tr><td>${c.className}</td><td class="warning">${c.coveragePercentage.toFixed(1)}%</td></tr>`;
             });
-            html += '  </table>\n';
-            if (lowCoverage.length > 10) {
-              html += '  <p><em>... and ' + (lowCoverage.length - 10) + ' more classes below threshold</em></p>\n';
-            }
+            html += '</table>';
           }
           
-          html += '  <div class="footer">\n';
-          html += '    <p>This report was generated automatically by the Salesforce DevOps Pipeline.</p>\n';
-          html += '    <p>For full details, see the <a href="' + process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID + '">GitHub Actions workflow run</a>.</p>\n';
-          html += '  </div>\n';
-          html += '</body>\n';
-          html += '</html>';
-          
+          html += '</body></html>';
           fs.writeFileSync('./test-results/report.html', html);
           
-          // ── Set outputs for email and downstream jobs ──
+          // Set outputs
           const outputFile = process.env.GITHUB_OUTPUT;
           if (outputFile) {
             fs.appendFileSync(outputFile, `has_failures=${report.summary.failing > 0}\n`);
@@ -492,11 +363,7 @@ jobs:
             fs.appendFileSync(outputFile, `summary_pass_rate=${report.summary.passRate}\n`);
           }
           
-          console.log(`\n✅ Report generated`);
-          console.log(`   Failures: ${report.summary.failing}`);
-          console.log(`   Low coverage: ${lowCoverage.length}`);
-          console.log(`   Org coverage: ${report.summary.orgWideCoverage}`);
-          console.log(`   Files: report.json, report.md, report.html`);
+          console.log(`✅ Report: ${report.summary.failing} failures, ${lowCoverage.length} low coverage`);
           ANALYZE_SCRIPT
           
           node analyze-results.js
@@ -542,126 +409,88 @@ jobs:
 
       - name: Organize Reports Directory
         run: |
-          # Create reports directory structure: test-reports/YYYY/MM/
+          # Create directory structure
           YEAR=$(date +%Y)
           MONTH=$(date +%m)
           REPORT_DIR="${{ env.REPORTS_DIR }}/${YEAR}/${MONTH}"
-          
-          mkdir -p "${REPORT_DIR}"
-          
-          # Create timestamped report directory
           TIMESTAMP="${{ needs.run-tests.outputs.report_date }}"
           REPORT_SUBDIR="${REPORT_DIR}/${TIMESTAMP}"
+          
           mkdir -p "${REPORT_SUBDIR}"
+          cp ./test-results/*.{json,md,html} "${REPORT_SUBDIR}/" 2>/dev/null || true
           
-          # Copy reports
-          cp ./test-results/report.json "${REPORT_SUBDIR}/"
-          cp ./test-results/report.md "${REPORT_SUBDIR}/"
-          cp ./test-results/report.html "${REPORT_SUBDIR}/"
-          
-          # Create or update index in the month directory
+          # Update month index
           INDEX_FILE="${REPORT_DIR}/README.md"
-          
           if [ ! -f "${INDEX_FILE}" ]; then
-            # Create index file header
-            {
-              echo "# Test Reports - ${MONTH}/${YEAR}"
-              echo ""
-              echo "## Reports"
-              echo ""
-            } > "${INDEX_FILE}"
+            echo -e "# Test Reports - ${MONTH}/${YEAR}\n\n## Reports\n" > "${INDEX_FILE}"
           fi
           
-          # Add entry to index (prepend to keep newest on top)
-          STATUS_ICON="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
-          REPORT_LINE="- ${STATUS_ICON} [${TIMESTAMP}](./${TIMESTAMP}/report.md) - Tests: ${{ needs.run-tests.outputs.summary_total }}, Passing: ${{ needs.run-tests.outputs.summary_passing }}, Failing: ${{ needs.run-tests.outputs.summary_failing }}, Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}"
+          STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
+          REPORT_LINE="- ${STATUS} [${TIMESTAMP}](./${TIMESTAMP}/report.md) - ${{ needs.run-tests.outputs.summary_total }} tests, ${{ needs.run-tests.outputs.summary_failing }} failures"
           
-          # FIXED: Portable method using grep and temporary file
           {
             head -n 2 "${INDEX_FILE}"
             echo "${REPORT_LINE}"
             tail -n +3 "${INDEX_FILE}"
           } > "${INDEX_FILE}.tmp" && mv "${INDEX_FILE}.tmp" "${INDEX_FILE}"
           
-          echo "📁 Report organized in: ${REPORT_SUBDIR}"
           echo "REPORT_DIR=${REPORT_DIR}" >> $GITHUB_ENV
           echo "REPORT_SUBDIR=${REPORT_SUBDIR}" >> $GITHUB_ENV
 
       - name: Create Root Index
         run: |
-          # Create main index at test-reports/README.md
           ROOT_INDEX="${{ env.REPORTS_DIR }}/README.md"
           
-          {
-            echo "# Salesforce Test Reports"
-            echo ""
-            echo "This directory contains automated test execution reports organized by year and month."
-            echo ""
-            echo "## Latest Reports"
-            echo ""
-          } > "${ROOT_INDEX}"
+          cat > "${ROOT_INDEX}" << 'EOF'
+# Salesforce Test Reports
+
+Automated test execution reports organized by year and month.
+
+## Latest Reports
+
+EOF
           
-          # FIXED: Simplified approach using ls -t (sort by modification time)
-          # Find all report.md files and get the 10 most recent
+          # List 10 most recent reports
           find "${{ env.REPORTS_DIR }}" -name "report.md" -type f -print0 2>/dev/null | \
             xargs -0 ls -t 2>/dev/null | head -10 | while read -r filepath; do
-            
-            # Extract date from path (YYYY-MM-DD format)
             REPORT_DATE=$(echo "$filepath" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
-            
             if [ -n "$REPORT_DATE" ]; then
-              # Calculate relative path from test-reports directory
               REL_PATH="${filepath#${{ env.REPORTS_DIR }}/}"
               echo "- [${REPORT_DATE}](./${REL_PATH})" >> "${ROOT_INDEX}"
             fi
           done
           
-          {
-            echo ""
-            echo "## Directory Structure"
-            echo ""
-            echo "Reports are organized by:"
-            echo "- \`YYYY/MM/YYYY-MM-DD/\` - Daily test reports"
-            echo "- Each report includes: \`report.json\`, \`report.md\`, \`report.html\`"
-            echo ""
-            echo "## Viewing Reports"
-            echo ""
-            echo "- **Markdown:** View \`report.md\` directly in GitHub"
-            echo "- **JSON:** Download \`report.json\` for programmatic access"
-            echo "- **HTML:** Download and open \`report.html\` in a browser"
-            echo ""
-            echo "---"
-            echo ""
-            echo "_Reports are automatically generated by the Salesforce Test Runner workflow._"
-          } >> "${ROOT_INDEX}"
-          
-          echo "📄 Root index created at: ${ROOT_INDEX}"
+          cat >> "${ROOT_INDEX}" << 'EOF'
+
+## Directory Structure
+
+- `YYYY/MM/YYYY-MM-DD/` - Daily reports
+- Each report includes: `report.json`, `report.md`, `report.html`
+
+EOF
 
       - name: Commit and Push Reports
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
           git add ${{ env.REPORTS_DIR }}/
           
-          # Check if there are changes to commit
           if git diff --staged --quiet; then
-            echo "ℹ️ No changes to commit"
+            echo "No changes to commit"
             exit 0
           fi
           
-          STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴 FAILED' || '✅ PASSED' }}"
+          STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
           
-          # FIXED: Use multiple -m flags for multiline commit message
-          git commit \
-            -m "test: Add test report for ${{ needs.run-tests.outputs.report_date }} - ${STATUS}" \
-            -m "Tests: ${{ needs.run-tests.outputs.summary_total }}" \
-            -m "Passing: ${{ needs.run-tests.outputs.summary_passing }}" \
-            -m "Failing: ${{ needs.run-tests.outputs.summary_failing }}" \
-            -m "Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}" \
-            -m "" \
-            -m "Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git commit -m "$(cat <<EOF
+test: ${STATUS} Test report ${{ needs.run-tests.outputs.report_date }}
+
+Tests: ${{ needs.run-tests.outputs.summary_total }}
+Passing: ${{ needs.run-tests.outputs.summary_passing }}
+Failing: ${{ needs.run-tests.outputs.summary_failing }}
+Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}
+EOF
+)"
           
           git push
-          
-          echo "✅ Test report committed and pushed to repository"
+          echo "✅ Report committed"
