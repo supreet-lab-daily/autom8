@@ -92,6 +92,7 @@ jobs:
       # ────────────────────────────────────────────────────────────────────
       - name: Run Apex Tests
         id: run-tests
+        shell: bash
         run: |
           set -o pipefail
           mkdir -p ./test-results
@@ -389,7 +390,9 @@ jobs:
     name: Commit Test Report
     runs-on: ubuntu-latest
     needs: run-tests
-    if: ${{ always() && (inputs.commit_report != 'false') }}
+    # FIX 1: Proper boolean handling - inputs.commit_report is boolean, not string
+    # For scheduled runs, inputs.commit_report is null, so we default to true
+    if: ${{ always() && (github.event_name == 'schedule' || inputs.commit_report == true) }}
     
     permissions:
       contents: write
@@ -408,6 +411,7 @@ jobs:
           path: ./test-results/
 
       - name: Organize Reports Directory
+        shell: bash
         run: |
           # Create directory structure
           YEAR=$(date +%Y)
@@ -417,7 +421,11 @@ jobs:
           REPORT_SUBDIR="${REPORT_DIR}/${TIMESTAMP}"
           
           mkdir -p "${REPORT_SUBDIR}"
-          cp ./test-results/*.{json,md,html} "${REPORT_SUBDIR}/" 2>/dev/null || true
+          
+          # FIX 2: Explicit bash shell ensures brace expansion works
+          cp ./test-results/*.json "${REPORT_SUBDIR}/" 2>/dev/null || true
+          cp ./test-results/*.md "${REPORT_SUBDIR}/" 2>/dev/null || true
+          cp ./test-results/*.html "${REPORT_SUBDIR}/" 2>/dev/null || true
           
           # Update month index
           INDEX_FILE="${REPORT_DIR}/README.md"
@@ -425,30 +433,39 @@ jobs:
             echo -e "# Test Reports - ${MONTH}/${YEAR}\n\n## Reports\n" > "${INDEX_FILE}"
           fi
           
-          STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
+          # FIX 3: Proper numeric comparison - convert string output to number
+          FAILING_COUNT="${{ needs.run-tests.outputs.summary_failing }}"
+          if [ "${FAILING_COUNT:-0}" -gt 0 ]; then
+            STATUS="🔴"
+          else
+            STATUS="✅"
+          fi
+          
           REPORT_LINE="- ${STATUS} [${TIMESTAMP}](./${TIMESTAMP}/report.md) - ${{ needs.run-tests.outputs.summary_total }} tests, ${{ needs.run-tests.outputs.summary_failing }} failures"
           
+          # Insert new report at the top of the reports list
           {
-            head -n 2 "${INDEX_FILE}"
+            head -n 4 "${INDEX_FILE}"
             echo "${REPORT_LINE}"
-            tail -n +3 "${INDEX_FILE}"
+            tail -n +5 "${INDEX_FILE}"
           } > "${INDEX_FILE}.tmp" && mv "${INDEX_FILE}.tmp" "${INDEX_FILE}"
           
           echo "REPORT_DIR=${REPORT_DIR}" >> $GITHUB_ENV
           echo "REPORT_SUBDIR=${REPORT_SUBDIR}" >> $GITHUB_ENV
 
       - name: Create Root Index
+        shell: bash
         run: |
           ROOT_INDEX="${{ env.REPORTS_DIR }}/README.md"
           
           cat > "${ROOT_INDEX}" << 'EOF'
-# Salesforce Test Reports
+          # Salesforce Test Reports
 
-Automated test execution reports organized by year and month.
+          Automated test execution reports organized by year and month.
 
-## Latest Reports
+          ## Latest Reports
 
-EOF
+          EOF
           
           # List 10 most recent reports
           find "${{ env.REPORTS_DIR }}" -name "report.md" -type f -print0 2>/dev/null | \
@@ -462,14 +479,15 @@ EOF
           
           cat >> "${ROOT_INDEX}" << 'EOF'
 
-## Directory Structure
+          ## Directory Structure
 
-- `YYYY/MM/YYYY-MM-DD/` - Daily reports
-- Each report includes: `report.json`, `report.md`, `report.html`
+          - `YYYY/MM/YYYY-MM-DD/` - Daily reports
+          - Each report includes: `report.json`, `report.md`, `report.html`
 
-EOF
+          EOF
 
       - name: Commit and Push Reports
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -480,17 +498,20 @@ EOF
             exit 0
           fi
           
-          STATUS="${{ needs.run-tests.outputs.summary_failing > 0 && '🔴' || '✅' }}"
+          # FIX 4: Proper numeric comparison in shell
+          FAILING_COUNT="${{ needs.run-tests.outputs.summary_failing }}"
+          if [ "${FAILING_COUNT:-0}" -gt 0 ]; then
+            STATUS="🔴"
+          else
+            STATUS="✅"
+          fi
           
-          git commit -m "$(cat <<EOF
-test: ${STATUS} Test report ${{ needs.run-tests.outputs.report_date }}
+          git commit -m "test: ${STATUS} Test report ${{ needs.run-tests.outputs.report_date }}
 
-Tests: ${{ needs.run-tests.outputs.summary_total }}
-Passing: ${{ needs.run-tests.outputs.summary_passing }}
-Failing: ${{ needs.run-tests.outputs.summary_failing }}
-Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}
-EOF
-)"
+          Tests: ${{ needs.run-tests.outputs.summary_total }}
+          Passing: ${{ needs.run-tests.outputs.summary_passing }}
+          Failing: ${{ needs.run-tests.outputs.summary_failing }}
+          Pass Rate: ${{ needs.run-tests.outputs.summary_pass_rate }}"
           
           git push
           echo "✅ Report committed"
