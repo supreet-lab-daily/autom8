@@ -2,6 +2,7 @@
 
 ## Reports
 
+- 🔴 [2026-02-07](./2026-02-07/report.md) - 1992 tests, 36 failures
 - 🔴 [2026-02-06](./2026-02-06/report.md) - 1992 tests, 36 failures
 - 🔴 [2026-02-05](./2026-02-05/report.md) - 1352 tests, 35 failures
 - 🔴 [2026-02-04](./2026-02-04/report.md) - 1941 tests, 35 failures
