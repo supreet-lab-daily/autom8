@@ -1,0 +1,18 @@
+{
+  "description": "Release schedule mapping date ranges to sandbox environments. Update this file when the release calendar changes.",
+  "gap_behavior": "BOTH",
+  "schedule": [
+    { "start": "2026-04-28", "end": "2026-05-19", "sandbox": "TEST2" },
+    { "start": "2026-05-05", "end": "2026-05-19", "sandbox": "TEST2" },
+    { "start": "2026-05-26", "end": "2026-05-29", "sandbox": "TEST2" },
+    { "start": "2026-06-16", "end": "2026-06-19", "sandbox": "TEST1" },
+    { "start": "2026-07-07", "end": "2026-07-10", "sandbox": "TEST1" },
+    { "start": "2026-07-28", "end": "2026-07-31", "sandbox": "TEST1" },
+    { "start": "2026-08-04", "end": "2026-08-07", "sandbox": "TEST1" },
+    { "start": "2026-08-25", "end": "2026-08-28", "sandbox": "TEST1" },
+    { "start": "2026-09-15", "end": "2026-09-18", "sandbox": "TEST2" },
+    { "start": "2026-10-06", "end": "2026-10-09", "sandbox": "TEST2" },
+    { "start": "2026-10-27", "end": "2026-10-30", "sandbox": "TEST2" },
+    { "start": "2026-11-03", "end": "2026-11-06", "sandbox": "TEST2" }
+  ]
+}
