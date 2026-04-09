@@ -1,0 +1,121 @@
+{
+  "sandbox": "TEST1",
+  "summary": {
+    "testsRan": 2279,
+    "passing": 2279,
+    "failing": 0,
+    "passRate": "100%",
+    "testRunId": "707Ox0000FthhRv",
+    "orgWideCoverage": "94%",
+    "timestamp": "2026-04-09T22:36:25.938Z",
+    "reportDate": "2026-04-09"
+  },
+  "failingClasses": [],
+  "lowCoverageClasses": [
+    {
+      "className": "lmtovaOrderValidationUtil",
+      "linesCovered": 159,
+      "totalLines": 212,
+      "coveragePercentage": 75,
+      "lastCommitter": null
+    },
+    {
+      "className": "CommunitiesSelfRegController",
+      "linesCovered": 32,
+      "totalLines": 42,
+      "coveragePercentage": 76.19,
+      "lastCommitter": null
+    },
+    {
+      "className": "lmtovaValidateOrderAction",
+      "linesCovered": 367,
+      "totalLines": 480,
+      "coveragePercentage": 76.46,
+      "lastCommitter": null
+    },
+    {
+      "className": "LeadCadenceAssignHelper",
+      "linesCovered": 45,
+      "totalLines": 57,
+      "coveragePercentage": 78.95,
+      "lastCommitter": null
+    },
+    {
+      "className": "MicrobatchSelfRegController",
+      "linesCovered": 32,
+      "totalLines": 40,
+      "coveragePercentage": 80,
+      "lastCommitter": null
+    },
+    {
+      "className": "LogBatchPurger",
+      "linesCovered": 110,
+      "totalLines": 137,
+      "coveragePercentage": 80.29,
+      "lastCommitter": null
+    },
+    {
+      "className": "EmailMessageHandler",
+      "linesCovered": 51,
+      "totalLines": 63,
+      "coveragePercentage": 80.95,
+      "lastCommitter": null
+    },
+    {
+      "className": "SiteRegisterController",
+      "linesCovered": 22,
+      "totalLines": 27,
+      "coveragePercentage": 81.48,
+      "lastCommitter": null
+    },
+    {
+      "className": "PricingPlanHelper",
+      "linesCovered": 996,
+      "totalLines": 1216,
+      "coveragePercentage": 81.91,
+      "lastCommitter": null
+    },
+    {
+      "className": "SupportTeamMemberGroupService",
+      "linesCovered": 24,
+      "totalLines": 29,
+      "coveragePercentage": 82.76,
+      "lastCommitter": null
+    },
+    {
+      "className": "ApprovalWorkItemService",
+      "linesCovered": 45,
+      "totalLines": 54,
+      "coveragePercentage": 83.33,
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountEmailHandler",
+      "linesCovered": 26,
+      "totalLines": 31,
+      "coveragePercentage": 83.87,
+      "lastCommitter": null
+    },
+    {
+      "className": "LoggerCache",
+      "linesCovered": 74,
+      "totalLines": 86,
+      "coveragePercentage": 86.05,
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountEnrichmentBatch",
+      "linesCovered": 25,
+      "totalLines": 29,
+      "coveragePercentage": 86.21,
+      "lastCommitter": null
+    },
+    {
+      "className": "RelatedLogEntriesController",
+      "linesCovered": 100,
+      "totalLines": 115,
+      "coveragePercentage": 86.96,
+      "lastCommitter": null
+    }
+  ]
+}
