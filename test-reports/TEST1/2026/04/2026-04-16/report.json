@@ -1,0 +1,132 @@
+{
+  "sandbox": "TEST1",
+  "summary": {
+    "testsRan": 2557,
+    "passing": 2556,
+    "failing": 1,
+    "passRate": "100%",
+    "testRunId": "707Ox0000GAcOl9",
+    "orgWideCoverage": "94%",
+    "timestamp": "2026-04-16T22:40:49.329Z",
+    "reportDate": "2026-04-16"
+  },
+  "failingClasses": [
+    {
+      "className": "AccountApprovalBatchTest",
+      "methods": [
+        {
+          "methodName": "testHandleAfterUpdate_Success",
+          "message": "System.DmlException: Update failed. First exception on row 0 with id 001Ox00001WvfQoIAJ; first error: ENTITY_IS_LOCKED, This record is locked. If you need to edit it, contact your admin.: []"
+        }
+      ],
+      "lastCommitter": null
+    }
+  ],
+  "lowCoverageClasses": [
+    {
+      "className": "AccountApprovalBatch",
+      "linesCovered": 16,
+      "totalLines": 23,
+      "coveragePercentage": 69.57,
+      "lastCommitter": null
+    },
+    {
+      "className": "lmtovaOrderValidationUtil",
+      "linesCovered": 159,
+      "totalLines": 212,
+      "coveragePercentage": 75,
+      "lastCommitter": null
+    },
+    {
+      "className": "CommunitiesSelfRegController",
+      "linesCovered": 32,
+      "totalLines": 42,
+      "coveragePercentage": 76.19,
+      "lastCommitter": null
+    },
+    {
+      "className": "lmtovaValidateOrderAction",
+      "linesCovered": 367,
+      "totalLines": 480,
+      "coveragePercentage": 76.46,
+      "lastCommitter": null
+    },
+    {
+      "className": "LeadCadenceAssignHelper",
+      "linesCovered": 45,
+      "totalLines": 57,
+      "coveragePercentage": 78.95,
+      "lastCommitter": null
+    },
+    {
+      "className": "MicrobatchSelfRegController",
+      "linesCovered": 32,
+      "totalLines": 40,
+      "coveragePercentage": 80,
+      "lastCommitter": null
+    },
+    {
+      "className": "LogBatchPurger",
+      "linesCovered": 110,
+      "totalLines": 137,
+      "coveragePercentage": 80.29,
+      "lastCommitter": null
+    },
+    {
+      "className": "EmailMessageHandler",
+      "linesCovered": 51,
+      "totalLines": 63,
+      "coveragePercentage": 80.95,
+      "lastCommitter": null
+    },
+    {
+      "className": "PricingPlanHelper",
+      "linesCovered": 988,
+      "totalLines": 1216,
+      "coveragePercentage": 81.25,
+      "lastCommitter": null
+    },
+    {
+      "className": "SiteRegisterController",
+      "linesCovered": 22,
+      "totalLines": 27,
+      "coveragePercentage": 81.48,
+      "lastCommitter": null
+    },
+    {
+      "className": "SupportTeamMemberGroupService",
+      "linesCovered": 24,
+      "totalLines": 29,
+      "coveragePercentage": 82.76,
+      "lastCommitter": null
+    },
+    {
+      "className": "UpdateDIYOpportunityHelper",
+      "linesCovered": 55,
+      "totalLines": 65,
+      "coveragePercentage": 84.62,
+      "lastCommitter": null
+    },
+    {
+      "className": "LoggerCache",
+      "linesCovered": 74,
+      "totalLines": 86,
+      "coveragePercentage": 86.05,
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountEnrichmentBatch",
+      "linesCovered": 25,
+      "totalLines": 29,
+      "coveragePercentage": 86.21,
+      "lastCommitter": null
+    },
+    {
+      "className": "RelatedLogEntriesController",
+      "linesCovered": 100,
+      "totalLines": 115,
+      "coveragePercentage": 86.96,
+      "lastCommitter": null
+    }
+  ]
+}
