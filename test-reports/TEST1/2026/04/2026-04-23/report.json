@@ -1,0 +1,212 @@
+{
+  "sandbox": "TEST1",
+  "summary": {
+    "testsRan": 2782,
+    "passing": 2766,
+    "failing": 16,
+    "passRate": "99%",
+    "testRunId": "707Ox0000GRhuvU",
+    "orgWideCoverage": "93%",
+    "timestamp": "2026-04-23T22:49:23.650Z",
+    "reportDate": "2026-04-23"
+  },
+  "failingClasses": [
+    {
+      "className": "Q2OFeatureManagementTest",
+      "methods": [
+        {
+          "methodName": "testIsPartnerUserException",
+          "message": "System.QueryException: List has no rows for assignment to SObject"
+        },
+        {
+          "methodName": "testIsPartnerUserSuccess",
+          "message": "System.QueryException: List has no rows for assignment to SObject"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountAUTriggerHandlerTest",
+      "methods": [
+        {
+          "methodName": "testHandleAfterUpdate",
+          "message": "System.DmlException: Update failed. First exception on row 0 with id 001Ox00001XT1TnIAL; first error: INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY, insufficient access rights on cross-reference id: 001Ox00001XT1Tn: []"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountApprovalBatchTest",
+      "methods": [
+        {
+          "methodName": "testHandleAfterUpdate_Success",
+          "message": "System.DmlException: Update failed. First exception on row 0 with id 001Ox00001XTI69IAH; first error: ENTITY_IS_LOCKED, This record is locked. If you need to edit it, contact your admin.: []"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "LeadSLAAutomationBatchTest",
+      "methods": [
+        {
+          "methodName": "testBatchScheduler",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        },
+        {
+          "methodName": "testInvalidUsersQueue",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        },
+        {
+          "methodName": "testInvalidUsersSDR",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        },
+        {
+          "methodName": "testLeadOneDaySLA",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        },
+        {
+          "methodName": "testLeadThreeDaySLADirector",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        },
+        {
+          "methodName": "testLeadThreeDaySLAIntelligenceTeam",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        },
+        {
+          "methodName": "testLeadThreeDaySLAManager",
+          "message": "System.DmlException: Insert failed. First exception on row 0; first error: INVALID_CROSS_REFERENCE_KEY, You can only assign users to permission set groups that have the \"Updated\" status.: []"
+        }
+      ],
+      "lastCommitter": null
+    },
+    {
+      "className": "CalculateCustomPricingImplTest",
+      "methods": [
+        {
+          "methodName": "testCalculateCustomPricingExpressionAngleBracketNotEqualsCoverage",
+          "message": "System.AssertException: Assertion Failed: Recurring charge mismatch.: Expected: 120, Actual: 150.00"
+        },
+        {
+          "methodName": "testCalculateCustomPricingExpressionBlankAndClauseCoverage",
+          "message": "System.AssertException: Assertion Failed: Recurring charge mismatch.: Expected: 130, Actual: 150.00"
+        },
+        {
+          "methodName": "testCalculateCustomPricingExpressionEqualsAndNotEqualsCoverage",
+          "message": "System.AssertException: Assertion Failed: Recurring charge mismatch.: Expected: 140, Actual: 150.00"
+        },
+        {
+          "methodName": "testCalculateCustomPricingExpressionEvaluatorLineCoverage",
+          "message": "System.AssertException: Assertion Failed: One-time charge mismatch.: Expected: 300, Actual: 100.00"
+        }
+      ],
+      "lastCommitter": null
+    }
+  ],
+  "lowCoverageClasses": [
+    {
+      "className": "Q2OFeatureManagement",
+      "linesCovered": 1,
+      "totalLines": 11,
+      "coveragePercentage": 9.09,
+      "lastCommitter": null
+    },
+    {
+      "className": "ContractBITriggerHandler",
+      "linesCovered": 13,
+      "totalLines": 35,
+      "coveragePercentage": 37.14,
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountApprovalBatch",
+      "linesCovered": 16,
+      "totalLines": 23,
+      "coveragePercentage": 69.57,
+      "lastCommitter": null
+    },
+    {
+      "className": "lmtovaOrderValidationUtil",
+      "linesCovered": 159,
+      "totalLines": 212,
+      "coveragePercentage": 75,
+      "lastCommitter": null
+    },
+    {
+      "className": "RestrictESMCatalogAndProduct",
+      "linesCovered": 72,
+      "totalLines": 95,
+      "coveragePercentage": 75.79,
+      "lastCommitter": null
+    },
+    {
+      "className": "CommunitiesSelfRegController",
+      "linesCovered": 32,
+      "totalLines": 42,
+      "coveragePercentage": 76.19,
+      "lastCommitter": null
+    },
+    {
+      "className": "lmtovaValidateOrderAction",
+      "linesCovered": 367,
+      "totalLines": 480,
+      "coveragePercentage": 76.46,
+      "lastCommitter": null
+    },
+    {
+      "className": "LeadCadenceAssignHelper",
+      "linesCovered": 45,
+      "totalLines": 57,
+      "coveragePercentage": 78.95,
+      "lastCommitter": null
+    },
+    {
+      "className": "MicrobatchSelfRegController",
+      "linesCovered": 32,
+      "totalLines": 40,
+      "coveragePercentage": 80,
+      "lastCommitter": null
+    },
+    {
+      "className": "LogBatchPurger",
+      "linesCovered": 108,
+      "totalLines": 134,
+      "coveragePercentage": 80.6,
+      "lastCommitter": null
+    },
+    {
+      "className": "BillingAccountPartnersCallout",
+      "linesCovered": 25,
+      "totalLines": 31,
+      "coveragePercentage": 80.65,
+      "lastCommitter": null
+    },
+    {
+      "className": "EmailMessageHandler",
+      "linesCovered": 51,
+      "totalLines": 63,
+      "coveragePercentage": 80.95,
+      "lastCommitter": null
+    },
+    {
+      "className": "PricingPlanHelper",
+      "linesCovered": 988,
+      "totalLines": 1216,
+      "coveragePercentage": 81.25,
+      "lastCommitter": null
+    },
+    {
+      "className": "SiteRegisterController",
+      "linesCovered": 22,
+      "totalLines": 27,
+      "coveragePercentage": 81.48,
+      "lastCommitter": null
+    },
+    {
+      "className": "AccountApprovalPlatformEventService",
+      "linesCovered": 61,
+      "totalLines": 74,
+      "coveragePercentage": 82.43,
+      "lastCommitter": null
+    }
+  ]
+}
